@@ -127,25 +127,43 @@ def check_imports() -> Check:
     command = [
         str(python_path),
         "-c",
-        "import fastapi, uvicorn, sqlalchemy, pydantic_settings, jinja2, authlib, itsdangerous, requests",
+        "import app.main",
     ]
     result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        return Check(False, f"Python dependencies are not importable in .venv: {detail}")
-    return Check(True, "Python dependencies are importable in .venv")
+        return Check(False, f"App startup imports are not available in .venv: {detail}")
+    return Check(True, "App startup imports are available in .venv")
 
 
 def check_readyz(app_url: str, *, optional: bool = False) -> Check:
     try:
         with urllib.request.urlopen(f"{app_url.rstrip('/')}/readyz", timeout=2) as response:
-            if response.status == 200:
-                return Check(True, "Local server /readyz is responding")
-            return Check(False, f"Local server /readyz returned HTTP {response.status}")
+            if response.status != 200:
+                return Check(False, f"Local server /readyz returned HTTP {response.status}")
     except Exception:
         if optional:
             return Check(False, "Local server is not running yet", warning=True)
         return Check(False, "Local server is not responding")
+
+    api_key = read_env().get("TASK_TRACKER_API_KEY", "")
+    if not api_key or api_key == "change-me":
+        return Check(False, "Local server /readyz responds, but TASK_TRACKER_API_KEY is missing", warning=optional)
+    request = urllib.request.Request(
+        f"{app_url.rstrip('/')}/api/tasks?include_done=false",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=2) as response:
+            if response.status == 200:
+                return Check(True, "Local server /readyz and API auth are responding")
+            return Check(False, f"Local server API returned HTTP {response.status}", warning=optional)
+    except Exception:
+        return Check(
+            False,
+            "A service responded on /readyz, but it did not accept this Local Mode API key",
+            warning=optional,
+        )
 
 
 def read_env() -> dict[str, str]:

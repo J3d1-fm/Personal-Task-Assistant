@@ -1,22 +1,22 @@
 Personal Task Assistant Technical Documentation
 
-Version: 0.3.5
+Version: 0.3.6
 Last updated: 2026-06-04
 
 Overview
 
 Personal Task Assistant is a FastAPI application with a server-rendered HTML shell, static CSS/JS assets, and JSON API endpoints for task creation, task updates, agent queue reads, context ingestion, and reminders.
 
-Version 0.3.5 hardens Local Mode after independent review: repeat launch no
-longer reinstalls dependencies, docs distinguish local auth from hosted Google
-OAuth, loopback-only safety is explicit, and the doctor avoids creating database
-files while checking a broader dependency set.
+Version 0.3.6 closes the remaining Local Mode review gaps: the doctor validates
+the real app.main startup import path, and launchers identify an existing
+Personal Task Assistant server by both /readyz and the configured local API key
+instead of trusting any service with a /readyz endpoint.
 
 Changed Files
 
 - app/config.py
   Sets Settings.app_name to Personal Task Assistant.
-  Sets Settings.app_version to 0.3.5.
+  Sets Settings.app_version to 0.3.6.
   Adds local_dev_auth_enabled for non-hosted runs with no Google OAuth configured.
   Adds local_dev_user_email for the browser session used by local development.
   Adds TASK_HISTORY_SHEET_ID and TASK_HISTORY_SHEET_TAB settings for optional spreadsheet history.
@@ -82,6 +82,8 @@ Changed Files
   Non-interactive `--yes` does not start the server unless `--start` is also set.
   In 0.3.5, reports a clear error if port 8000 is already used by another local
   app.
+  In 0.3.6, uses the same local API-key check as scripts/run_local.py before
+  treating an existing process as Personal Task Assistant.
 
 - scripts/local_doctor.py
   Adds a Local Mode diagnostic that checks Python version, `.venv`, `.env`,
@@ -91,12 +93,18 @@ Changed Files
   availability should be mandatory.
   In 0.3.5, avoids creating SQLite files during checks and validates the broader
   dependency set needed by the app.
+  In 0.3.6, validates the actual app.main startup import path and confirms a
+  running server accepts the configured local API key before treating it as
+  Personal Task Assistant. The default optional server check warns on a wrong
+  local service, while `--require-server` fails until the real app responds.
 
 - scripts/run_local.py
   Adds a local runtime launcher that starts an already-installed Local Mode app
   without repeating dependency installation. If `.venv` or `.env` is missing, it
   delegates to `scripts/setup_wizard.py --yes --start`.
   Reports a clear error when port 8000 is already used by another local app.
+  In 0.3.6, checks /api/tasks with the local API key so an unrelated service
+  with a /readyz endpoint is not treated as the app.
 
 - scripts/render_demo_gif.py
   Renders `docs/assets/human-ai-workflow-demo.gif` with ffmpeg so the README demo
@@ -341,11 +349,11 @@ Local Mode is intended for loopback access at `127.0.0.1`. Do not expose it with
 `--host 0.0.0.0`, LAN access, or a public tunnel unless real authentication is
 configured first.
 
-No database migration is required for version 0.3.5. The live task schema is unchanged because DD uses the existing `due_at` field and date set uses the existing `created_at` field. The only production configuration added in 0.2.4 is optional Sheets history access.
+No database migration is required for version 0.3.6. The live task schema is unchanged because DD uses the existing `due_at` field and date set uses the existing `created_at` field. The only production configuration added in 0.2.4 is optional Sheets history access.
 
 Rollback Notes
 
-To roll back version 0.3.5, revert these files to the previous version:
+To roll back version 0.3.6, revert these files to the previous version:
 
 - app/config.py
 - README.md
@@ -407,3 +415,8 @@ Verification Performed
 - Version 0.3.5 Local Mode doctor smoke passed without creating a SQLite file when the database is absent.
 - Version 0.3.5 Local Mode launcher smoke found a port-8000 conflict with another local app; the launcher now reports this conflict before starting uvicorn.
 - Version 0.3.5 `git diff --check` passed.
+- Independent v0.3.5 review found two remaining Local Mode review gaps: the doctor did not import the full app startup path, and another local service with `/readyz` could still be mistaken for Personal Task Assistant. Both are fixed in 0.3.6.
+- Version 0.3.6 Python compile check passed for app/config.py, scripts/setup_wizard.py, scripts/local_doctor.py, and scripts/run_local.py.
+- Version 0.3.6 Local Mode doctor smoke passed with `import app.main` and no SQLite file side effect.
+- Version 0.3.6 Local Mode launcher smoke passed for the port-8000 conflict path.
+- Version 0.3.6 `git diff --check` passed.

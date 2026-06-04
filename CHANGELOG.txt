@@ -1,5 +1,13 @@
 Personal Task Assistant Changelog
 
+Version 0.3.6 - 2026-06-04
+
+- Made `scripts/local_doctor.py` validate the real `app.main` startup import path instead of a partial dependency list.
+- Made Local Mode server detection verify both `/readyz` and the local API key against `/api/tasks`.
+- Kept the default Local Mode doctor non-blocking when a wrong service is already on the local URL, while `--require-server` still fails until the real app responds.
+- Reduced false positives where another local service on port 8000 could be mistaken for Personal Task Assistant.
+- Bumped the app version from 0.3.5 to 0.3.6.
+
 Version 0.3.5 - 2026-06-04
 
 - Added `scripts/run_local.py` so `run-local.command` starts the local app without reinstalling dependencies after first setup.

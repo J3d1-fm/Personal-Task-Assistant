@@ -130,7 +130,7 @@ def run_local_doctor() -> None:
 
 
 def run_server() -> int:
-    if readyz_available():
+    if local_app_available():
         print("\nLocal server is already running.")
         open_browser()
         return 0
@@ -160,7 +160,7 @@ def run_server() -> int:
 def wait_for_readyz() -> None:
     deadline = time.time() + 30
     while time.time() < deadline:
-        if readyz_available():
+        if local_app_available():
             return
         time.sleep(0.5)
     print("Server is starting slowly. Open the URL manually if the browser does not open.")
@@ -169,6 +169,23 @@ def wait_for_readyz() -> None:
 def readyz_available() -> bool:
     try:
         with urllib.request.urlopen(f"{APP_URL}/readyz", timeout=2) as response:
+            return response.status == 200
+    except Exception:
+        return False
+
+
+def local_app_available() -> bool:
+    if not readyz_available():
+        return False
+    api_key = read_env().get("TASK_TRACKER_API_KEY", "")
+    if not api_key or api_key == "change-me":
+        return False
+    request = urllib.request.Request(
+        f"{APP_URL}/api/tasks?include_done=false",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=2) as response:
             return response.status == 200
     except Exception:
         return False
@@ -185,6 +202,19 @@ def open_browser() -> None:
         webbrowser.open(APP_URL)
     except Exception:
         print(f"Open {APP_URL} in your browser.")
+
+
+def read_env() -> dict[str, str]:
+    if not ENV_FILE.exists():
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
 
 
 def venv_python() -> Path:
