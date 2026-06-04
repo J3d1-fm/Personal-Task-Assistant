@@ -23,6 +23,26 @@ It provides:
 - Role-oriented queues for agent-ready work, human input, review, blocked work,
   and unassigned tasks.
 
+## Install For Non-Technical Users
+
+The fastest path is to give this repository link to an AI coding agent and ask
+it to follow `docs/AGENT_INSTALL.md`.
+
+```text
+Install this app for me:
+https://github.com/J3d1-fm/Personal-Task-Assistant
+
+Follow docs/AGENT_INSTALL.md. Use the local quick-start first. Do not add real
+Jira, Asana, YouTrack, Slack, Telegram, email, OAuth, or cloud credentials unless
+I explicitly provide them.
+```
+
+On macOS, a user can also download the repository and double-click
+`install.command`. The installer creates `.venv`, installs dependencies, writes a
+local `.env`, starts the app, and opens `http://127.0.0.1:8000`.
+
+More details: `docs/INSTALLATION.md`.
+
 ## Local Development
 
 ```bash

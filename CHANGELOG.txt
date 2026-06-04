@@ -1,8 +1,12 @@
 Personal Task Assistant Changelog
 
-Unreleased
+Version 0.3.1 - 2026-06-04
 
 - Clarified that Jira, Asana, YouTrack, Slack, Telegram, email, and similar integrations are supported through user-built adapters that call the JSON API; source-specific adapter implementation and credentials remain the user's responsibility.
+- Added a local setup wizard at `scripts/setup_wizard.py`.
+- Added a macOS double-click installer at `install.command`.
+- Added non-technical installation instructions and AI-agent install instructions.
+- Bumped the app version from 0.3.0 to 0.3.1.
 
 Version 0.3.0 - 2026-06-04
 
