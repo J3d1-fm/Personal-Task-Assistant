@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+.DS_Store
+.codex/
+docs/DAILY_INBOX_TASK_IMPORT_TECH.txt
+credentials*.json
+client_secret*.json
+service-account*.json
+*service_account*.json

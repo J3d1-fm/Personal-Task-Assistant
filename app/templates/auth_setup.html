@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ app_name }} auth setup</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <main class="setup">
+      <section class="panel setup-panel">
+        <h1>{{ app_name }}</h1>
+        <p>Google login is required, but OAuth is not configured yet.</p>
+        <pre>GOOGLE_OAUTH_CLIENT_ID=...
+GOOGLE_OAUTH_CLIENT_SECRET=...
+ALLOWED_GOOGLE_EMAILS=your-email@gmail.com
+SESSION_SECRET_KEY=long-random-secret</pre>
+        <p>Google redirect URI:</p>
+        <pre>{{ redirect_uri }}</pre>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,231 @@
+Personal Task Assistant Technical Documentation
+
+Version: 0.3.0
+Last updated: 2026-06-04
+
+Overview
+
+Personal Task Assistant is a FastAPI application with a server-rendered HTML shell, static CSS/JS assets, and JSON API endpoints for task creation, task updates, agent queue reads, context ingestion, and reminders.
+
+Version 0.3.0 renames the product from Personal Task Tracker to Personal Task Assistant and adjusts the product surface around human/AI collaboration. The UI now highlights agent-ready work and human-input work, adds explicit sort controls, and shows both the task set date and DD on each card. The backend now estimates DD from priority whenever a task source does not provide `due_at`, and exposes an agent-oriented queue API for external clients.
+
+Changed Files
+
+- app/config.py
+  Sets Settings.app_name to Personal Task Assistant.
+  Sets Settings.app_version to 0.3.0.
+  Adds local_dev_auth_enabled for non-hosted runs with no Google OAuth configured.
+  Adds local_dev_user_email for the browser session used by local development.
+  Adds TASK_HISTORY_SHEET_ID and TASK_HISTORY_SHEET_TAB settings for optional spreadsheet history.
+
+- app/history.py
+  Adds Google Sheets history export through Google Application Default Credentials and the Sheets REST API.
+  Ensures the configured history tab exists, writes the header row, and appends one row per tracked event.
+  Swallows Sheets write failures after logging a warning so task creation, updates, and deletes remain available.
+
+- app/main.py
+  Passes app_version into the index.html template.
+  Allows local development sessions to open the tracker UI directly when Google OAuth is not configured and the app is not hosted.
+  Records task events after create, patch, context ingest, and delete operations.
+  Adds `GET /api/agent/queue`, `POST /api/agent/tasks`, and `POST /api/agent/ingest/context`.
+  Computes agent queue summary fields for active, overdue, due-soon, codex-ready, human-input, review, blocked, and unassigned tasks.
+
+- app/store.py
+  Adds get_task to both SQLite and Firestore stores so history rows can include previous status, owner, priority, and due date on updates and dismissals.
+  Adds create-time DD defaults when `due_at` is missing. Default DD estimates are P1 +1 day, P2 +3 days, P3 +7 days, P4 +14 days, and P5 +30 days.
+
+- app/templates/index.html
+  Replaces the old sidebar-plus-board layout with a command-center layout:
+  top metrics, quick filters, search, capture form, and kanban board.
+  Static CSS and JS links now include ?v={{ app_version }} for cache busting.
+  Adds a color legend below the command center.
+  Adds tooltip text to metrics, filter controls, and legend items.
+  Adds sort controls and renames the visible product surface around agent queue and human input.
+
+- app/static/app.js
+  Adds client-side task state, metrics, persistent filters, search, priority sorting, due-soon and overdue detection, richer card rendering, and column counts.
+  Existing API calls remain unchanged except that manual task creation can now send due_at.
+  Adds generated tooltip text for task status, priority, owner, source, dates, and action buttons.
+  Adds deleteTask and a Dismiss button that calls DELETE /api/tasks/{task_id} after user confirmation.
+  In 0.2.6, task updates and dismissals use optimistic local state updates. The UI reverts the local task list and shows the existing error alert only if the server request fails.
+  Drag/drop caches column bounding rectangles once per drag gesture and only updates the changed drop target while the pointer moves.
+  In 0.3.0, adds persisted sort modes for smart priority, nearest DD, newest date set, recently updated, and owner then DD.
+  Adds Agent queue and Human input filters and metrics.
+  Adds Set and DD date pills to every rendered task card.
+  Migrates the old persisted `codex` filter to `codex_ready` and falls back unknown saved filters to `all`.
+
+- app/static/styles.css
+  Reworks layout, typography, command-center controls, task cards, responsive behavior, and focus states.
+  Adds compact legend styling and reusable tooltip styling for hover and keyboard focus.
+  Removes sticky positioning from command/capture panels and uses wider breakpoints to prevent panel overlap.
+  Adds destructive styling for Dismiss.
+  In 0.2.5, moves Capture into a full-width row above the board, gives board columns a 300px minimum, and constrains cards, pills, buttons, and inputs to their own containers.
+  Adds responsive layout for the sort/search controls and longer operational metric labels.
+
+- .env.example
+  Sets the default APP_NAME to Personal Task Assistant.
+
+- .gitignore
+  Ignores `.codex/`, local env variants, local database files, common credential JSON names, and the local daily inbox import runbook so private operational files cannot be staged by accident.
+
+- scripts/reminders.py
+  Replaces the local absolute notification command path with `TASK_REMINDER_NOTIFY_COMMAND`, `--notify`, or `personal-codex-notify` from PATH.
+
+- LICENSE
+  Adds MIT licensing for the public repository.
+
+- requirements.txt
+  Adds an explicit google-auth dependency for the Sheets history writer.
+
+Runtime Behavior
+
+Task loading still calls:
+
+GET /api/tasks?include_done=true
+
+Task creation still calls:
+
+POST /api/tasks
+
+If the request payload omits `due_at`, the store layer assigns a DD estimate before writing the task. This applies to manual UI creates, `POST /api/tasks`, `POST /api/agent/tasks`, and context-ingest-created tasks.
+
+Task updates still call:
+
+PATCH /api/tasks/{task_id}
+
+The browser no longer follows each successful PATCH with a full `GET /api/tasks?include_done=true`. It updates the in-memory task list immediately, renders the changed task state, and then replaces the local task with the server response. On request failure, it restores the previous local task state.
+
+Task dismissal calls:
+
+DELETE /api/tasks/{task_id}
+
+Dismiss removes the task from the local UI immediately and restores it only if DELETE fails.
+
+Dismiss is a hard delete in the live store. When Sheets history is enabled, it also appends a `dismissed` event row using a task snapshot captured before the active task data disappears from Firestore or SQLite.
+
+The browser UI computes these display-only concepts locally:
+
+- Active tasks: all tasks where status is not done.
+- Overdue tasks: active tasks with due_at or reminder_at earlier than the current browser time.
+- Due-soon tasks: active tasks with due_at or reminder_at within the next 24 hours.
+- My next actions: active tasks assigned to me.
+- Codex work: active tasks assigned to codex.
+- Needs review: tasks with waiting_review status.
+- Unassigned: active tasks with unassigned assignee.
+- Agent queue: active Codex-owned tasks in backlog or in_progress.
+- Human input: active tasks assigned to me, waiting_review, or blocked.
+
+Agent API:
+
+GET /api/agent/queue
+
+Returns:
+
+- `summary`: counts for active, overdue, due_soon, codex_ready, human_input, review, blocked, and unassigned.
+- `tasks`: selected tasks sorted by `smart`, `due`, `created`, `updated`, `priority`, or `owner`.
+
+POST /api/agent/tasks
+
+Creates one task using the normal task schema and records the history note `agent_api`.
+
+POST /api/agent/ingest/context
+
+Alias for context ingestion so external agent clients have a consistent `/api/agent/*` surface.
+
+Storage And Retention
+
+Production storage:
+
+- Cloud Run runs the FastAPI app.
+- `TASK_STORE=firestore` selects the Firestore backend.
+- Task records are stored in the Firestore collection `tasks`.
+- The numeric task id counter is stored in Firestore at `metadata/task_counter`.
+- There is no TTL, retention job, or archive job in the current code.
+
+Local development storage:
+
+- `TASK_STORE=sqlite` selects the SQLite backend.
+- Tasks are stored in the local SQLite file configured by `DATABASE_URL`, usually `task_tracker.db`.
+
+History behavior:
+
+- `created_at`, `updated_at`, `completed_at`, source fields, and source context are stored on each task.
+- Done tasks remain in storage indefinitely unless deleted.
+- Dismiss deletes the task permanently.
+- When `TASK_HISTORY_SHEET_ID` is configured, the app appends task events to Google Sheets.
+- Recorded event actions are `created`, `updated`, `completed`, and `dismissed`.
+- Context ingestion creates normal `created` rows with `note=context_ingest`.
+- Reminder reads do not currently write history because they do not mutate a task.
+
+Spreadsheet option:
+
+The tracker can export history to Google Sheets, but a spreadsheet is a weaker operational database than Firestore. It is reasonable for a human-readable archive or append-only history export. It is riskier as the primary live store because concurrent writes, id generation, filtering, deletes, API latency, and auth boundaries become more fragile.
+
+Recommended spreadsheet path if needed:
+
+- Keep Firestore as the live task store.
+- Use the append-only Google Sheets history export for created, updated, completed, and dismissed events.
+- Use Sheets for review/reporting and Firestore for the live queue.
+
+History spreadsheet configuration:
+
+- `TASK_HISTORY_SHEET_ID` is the raw Google Spreadsheet id.
+- `TASK_HISTORY_SHEET_TAB` defaults to `Task History`.
+- The Cloud Run service account must have writer access to the spreadsheet.
+- The Google Sheets API must be enabled in the Cloud project.
+- Deployment-specific spreadsheet names, URLs, service accounts, project ids, OAuth secrets, API keys, and local credential files are intentionally excluded from the public repository.
+
+History columns:
+
+- `event_at`, `action`, `task_id`, `title`, `status`, `previous_status`, `assignee`, `previous_assignee`, `priority`, `previous_priority`, `origin`, `source_name`, `source_url`, `due_at`, `previous_due_at`, `reminder_at`, `completed_at`, `created_at`, `updated_at`, `description`, `source_context`, `note`.
+
+Local Development Auth
+
+When `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` are empty, and the app is not considered hosted, the browser UI creates a local session automatically.
+
+The app is considered hosted when any of these are true:
+
+- Firestore is enabled through `TASK_STORE=firestore`.
+- `SESSION_COOKIE_HTTPS=true`.
+- `PUBLIC_BASE_URL` starts with `https://`.
+
+The local session email is the first configured `ALLOWED_GOOGLE_EMAILS` value, or `local-dev@task-tracker.local` if no allowlist is configured.
+
+This fallback is intended only for local development so the UI can be inspected at `http://127.0.0.1:8000/` without creating Google OAuth credentials.
+
+No database migration is required for version 0.3.0. The live task schema is unchanged because DD uses the existing `due_at` field and date set uses the existing `created_at` field. The only production configuration added in 0.2.4 is optional Sheets history access.
+
+Rollback Notes
+
+To roll back version 0.3.0, revert these files to the previous version:
+
+- app/config.py
+- app/main.py
+- app/schemas.py
+- app/static/app.js
+- app/static/styles.css
+- app/store.py
+- app/templates/index.html
+
+The changelog and this technical documentation can remain as history or be reverted with the same version rollback. If rolling back to 0.2.6, agent queue endpoints and automatic DD estimates disappear. If rolling back past 0.2.4, also unset `TASK_HISTORY_SHEET_ID` on Cloud Run.
+
+Verification Performed
+
+- python3 -m py_compile app/config.py app/history.py app/store.py app/main.py with PYTHONPYCACHEPREFIX under /private/tmp because the local app/__pycache__ directory is not writable.
+- Local FastAPI smoke test with temporary SQLite: create task, patch task to done, delete task, with Sheets history disabled.
+- History row formatter smoke test: completed event includes current and previous status fields.
+- Created native Google Sheet `Personal Task Tracker History` and verified the `Task History` tab/header row.
+- Granted writer access on the history sheet to the deployment service account.
+- Enabled `sheets.googleapis.com` in the deployment project.
+- Verified service account write access by appending one `setup_verification` row through Sheets API with a scoped service-account token, then deleted the temporary row.
+- Production Cloud Run deploy succeeded.
+- Production `/readyz` returned 200.
+- Production end-to-end smoke: created a temporary task through the API, confirmed `created` and `dismissed` rows reached the history sheet, deleted the task, removed the temporary smoke rows from the sheet, and confirmed the live task list no longer contained the temporary task.
+- Version 0.3.0 Python compile check passed for app/config.py, app/store.py, app/schemas.py, app/main.py, and app/history.py with PYTHONPYCACHEPREFIX under /private/tmp.
+- Version 0.3.0 `git diff --check` passed.
+- Version 0.3.0 local FastAPI smoke passed on a temporary SQLite database: `POST /api/agent/tasks` created a P2 Codex task with automatic DD about three days after `created_at`; `GET /api/agent/queue?assignee=codex&sort=smart&limit=10` returned the created task and `codex_ready=1`.
+- Independent review found and fixed a SQLite reminder regression where SQLite returned default DD timestamps as offset-naive datetimes. `is_reminder_due` now normalizes `current`, `due_at`, `reminder_at`, and `reminder_last_sent_at` before comparisons.
+- Independent review found and fixed a returning-user UI regression where a persisted 0.2.x `taskTrackerFilter=codex` could crash empty-state rendering. The UI now migrates it to `codex_ready`.
+- Version 0.3.0 in-app Browser desktop visual QA passed at the available viewport: title shows Personal Task Assistant, metrics show Active/Overdue/Agent queue/Human input/Review, Set/DD pills render on task cards, body horizontal overflow is 0, and horizontal overflow is contained inside the kanban board.
+- Version 0.3.0 in-app Browser interaction QA passed: selecting Agent queue and DD nearest shows one Codex-ready card and keeps body horizontal overflow at 0.
+- Mobile viewport resizing was not available in the in-app Browser session; responsive behavior was reviewed through the existing CSS breakpoints and the new controls inherit the single-column mobile layout under 760px.

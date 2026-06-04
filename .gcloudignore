@@ -1,0 +1,14 @@
+.git/
+.codex/
+.venv/
+__pycache__/
+*.pyc
+.env
+*.db
+*.log
+.DS_Store
+task_tracker.db
+docs/
+README.md
+deploy/
+scripts/

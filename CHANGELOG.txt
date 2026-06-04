@@ -1,0 +1,69 @@
+Personal Task Assistant Changelog
+
+Version 0.3.0 - 2026-06-04
+
+- Renamed the product surface to Personal Task Assistant for human/AI task collaboration.
+- Added automatic DD estimates when created or ingested tasks do not provide `due_at`.
+- Added Set and DD pills to task cards so date set and deadline stay visible.
+- Added persisted UI sorting by smart priority, nearest DD, newest date set, recently updated, and owner then DD.
+- Added Agent queue and Human input filters/metrics for Codex-executable work and person-dependent work.
+- Added `/api/agent/queue`, `/api/agent/tasks`, and `/api/agent/ingest/context` for external agent clients.
+- Fixed SQLite reminder datetime normalization after automatic DD assignment.
+- Added a safe migration for the old persisted `codex` UI filter.
+- Removed a local absolute notification path from the reminder helper script.
+- Expanded ignored local env, database, and credential file patterns.
+- Added MIT license and sanitized public documentation for GitHub publishing.
+- Bumped the app and static asset version from 0.2.6 to 0.3.0.
+
+Version 0.2.6 - 2026-06-04
+
+- Made task status and assignee transitions optimistic so card moves render immediately after button clicks or drag/drop.
+- Removed the extra full task-list reload after every PATCH and DELETE action.
+- Reduced drag/drop pointer-loop work by caching column hit areas and updating only the active drop target.
+- Bumped the app and static asset version from 0.2.5 to 0.2.6.
+
+Version 0.2.5 - 2026-06-01
+
+- Fixed the remaining desktop UI overlap by moving Capture above the kanban board instead of reserving a narrow side panel.
+- Increased kanban column minimum width and kept horizontal scrolling inside the board when the viewport cannot fit all columns.
+- Added layout constraints so task cards, metadata pills, controls, and form inputs cannot overflow into neighboring panels.
+- Bumped the app and static asset version from 0.2.4 to 0.2.5.
+
+Version 0.2.4 - 2026-06-01
+
+- Added optional append-only Google Sheets task history export controlled by `TASK_HISTORY_SHEET_ID` and `TASK_HISTORY_SHEET_TAB`.
+- Logged task lifecycle events for created, updated, completed, context-ingested, and dismissed tasks.
+- Kept Firestore/SQLite as the live task store; Sheets failures are logged as warnings and do not block task actions.
+- Added store-level `get_task` support so update/delete events can include previous task state.
+- Bumped the app and static asset version from 0.2.3 to 0.2.4.
+
+Version 0.2.3 - 2026-06-01
+
+- Removed sticky panel behavior and widened responsive breakpoints so command, capture, legend, and board panels do not overlap at common browser widths.
+- Added a Dismiss action on every task card that permanently deletes the task through `DELETE /api/tasks/{task_id}`.
+- Added destructive-action styling and confirmation for Dismiss.
+- Bumped the static asset version from 0.2.2 to 0.2.3.
+
+Version 0.2.2 - 2026-05-13
+
+- Added local development auth fallback so `http://127.0.0.1:8000/` opens the tracker UI when Google OAuth is not configured.
+- Kept the fallback disabled in hosted/HTTPS/Firestore environments so production still requires real Google OAuth.
+- Bumped the static asset version from 0.2.1 to 0.2.2.
+
+Version 0.2.1 - 2026-05-13
+
+- Added a compact color legend for overdue, urgent/due-soon, important, normal, and selected states.
+- Added hover and keyboard-focus tooltips for command-center metrics, quick filters, legend items, priority pills, owner pills, source pills, date pills, and task action buttons.
+- Bumped the static asset version from 0.2.0 to 0.2.1 so browsers refresh the updated UI.
+
+Version 0.2.0 - 2026-05-13
+
+- Redesigned the main task screen as an operational command center.
+- Added top-level metrics for active, overdue, personal, Codex, and review tasks.
+- Added persistent quick filters: all, my next actions, Codex work, needs review, overdue, and unassigned.
+- Added task search across title, description, source, context, origin, and assignee.
+- Added due date capture in the manual task form using the existing API field.
+- Improved task cards with clearer status, task id, priority labels, assignee labels, source links, due dates, and reminders.
+- Added priority-aware sorting so urgent, overdue, due-soon, and review tasks surface before lower-priority work.
+- Improved responsive layout for desktop and mobile, with stable board columns and readable card controls.
+- Added static asset version query strings so browsers load the new CSS and JS after deployment.

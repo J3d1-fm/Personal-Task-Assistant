@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ app_name }}</title>
+    <link rel="stylesheet" href="/static/styles.css?v={{ app_version }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="version">v{{ app_version }}</span>
+        <h1>{{ app_name }}</h1>
+        <p>Shared operating queue for human decisions and AI agent execution.</p>
+      </div>
+      <form class="account" method="post" action="/logout">
+        <span>{{ user.email }}</span>
+        <button type="submit" class="secondary">Logout</button>
+      </form>
+    </header>
+
+    <main class="shell">
+      <section class="command-center" aria-live="polite">
+        <div class="metrics" id="metrics">
+          <div class="metric" tabindex="0" data-tooltip="All tasks that are not Done. This is the live workload.">
+            <span class="metric-label">Active</span>
+            <strong data-metric="active">0</strong>
+          </div>
+          <div class="metric is-hot" tabindex="0" data-tooltip="Active tasks with a due date or reminder in the past.">
+            <span class="metric-label">Overdue</span>
+            <strong data-metric="overdue">0</strong>
+          </div>
+          <div class="metric" tabindex="0" data-tooltip="Active Codex-owned tasks that are not blocked and are not waiting for review.">
+            <span class="metric-label">Agent queue</span>
+            <strong data-metric="codex_ready">0</strong>
+          </div>
+          <div class="metric" tabindex="0" data-tooltip="Active tasks that need a human decision, review, or next action.">
+            <span class="metric-label">Human input</span>
+            <strong data-metric="human_input">0</strong>
+          </div>
+          <div class="metric" tabindex="0" data-tooltip="Tasks waiting for you to inspect and accept the result.">
+            <span class="metric-label">Review</span>
+            <strong data-metric="review">0</strong>
+          </div>
+        </div>
+
+        <div class="filters" role="group" aria-label="Task filters">
+          <button type="button" class="filter-chip is-active" data-filter="all" data-tooltip="Show every task, including Done.">All</button>
+          <button type="button" class="filter-chip" data-filter="codex_ready" data-tooltip="Show active tasks Codex can work on without extra human input.">Agent queue</button>
+          <button type="button" class="filter-chip" data-filter="human_input" data-tooltip="Show tasks that need your decision, review, or action.">Human input</button>
+          <button type="button" class="filter-chip" data-filter="mine" data-tooltip="Show active tasks assigned to you.">My tasks</button>
+          <button type="button" class="filter-chip" data-filter="review" data-tooltip="Show tasks that need your review before closing.">Needs review</button>
+          <button type="button" class="filter-chip" data-filter="overdue" data-tooltip="Show active tasks whose due or reminder time has passed.">Overdue</button>
+          <button type="button" class="filter-chip" data-filter="unassigned" data-tooltip="Show active tasks with no clear owner yet.">Unassigned</button>
+        </div>
+
+        <div class="controls">
+          <label class="sort-control">
+            <span>Sort</span>
+            <select id="taskSort">
+              <option value="smart">Smart priority</option>
+              <option value="due">DD nearest</option>
+              <option value="created">Date set newest</option>
+              <option value="updated">Recently updated</option>
+              <option value="owner">Owner then DD</option>
+            </select>
+          </label>
+          <label class="search">
+            <span>Search</span>
+            <input id="taskSearch" type="search" autocomplete="off" placeholder="Title, source, or note">
+          </label>
+        </div>
+      </section>
+
+      <section class="legend-panel" aria-label="Color legend">
+        <div class="legend-head">
+          <h2>Color legend</h2>
+          <p>Colors mark urgency and attention state.</p>
+        </div>
+        <ul class="legend-list">
+          <li tabindex="0" data-tooltip="Red overrides other colors when due_at or reminder_at is already past.">
+            <span class="legend-swatch swatch-overdue" aria-hidden="true"></span>
+            <strong>Red</strong>
+            <span>overdue</span>
+          </li>
+          <li tabindex="0" data-tooltip="Gold marks P1 urgent work. A subtle gold outline also marks tasks due within 24 hours.">
+            <span class="legend-swatch swatch-urgent" aria-hidden="true"></span>
+            <strong>Gold</strong>
+            <span>P1 / due soon</span>
+          </li>
+          <li tabindex="0" data-tooltip="Blue marks P2 important tasks that should stay visible but are not overdue.">
+            <span class="legend-swatch swatch-important" aria-hidden="true"></span>
+            <strong>Blue</strong>
+            <span>P2 important</span>
+          </li>
+          <li tabindex="0" data-tooltip="Green marks normal active work, usually P3 and lower, unless another state overrides it.">
+            <span class="legend-swatch swatch-normal" aria-hidden="true"></span>
+            <strong>Green</strong>
+            <span>normal</span>
+          </li>
+          <li tabindex="0" data-tooltip="A green filled button or owner pill means the current owner/action is already selected.">
+            <span class="legend-swatch swatch-selected" aria-hidden="true"></span>
+            <strong>Filled</strong>
+            <span>selected owner/status</span>
+          </li>
+        </ul>
+      </section>
+
+      <div class="workspace">
+        <section class="panel composer">
+          <div class="section-heading">
+            <div>
+              <h2>Capture</h2>
+              <p>Create only the next concrete action.</p>
+            </div>
+          </div>
+          <form id="taskForm">
+            <label>Title <input name="title" required maxlength="240" placeholder="Action, not topic"></label>
+            <label>Description <textarea name="description" rows="5" placeholder="Context, link, or expected outcome"></textarea></label>
+            <div class="grid">
+              <label>Owner
+                <select name="assignee">
+                  <option value="unassigned">Unassigned</option>
+                  <option value="me">Me</option>
+                  <option value="codex">Codex</option>
+                </select>
+              </label>
+              <label>Status
+                <select name="status">
+                  <option value="backlog">Backlog</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="waiting_review">Waiting review</option>
+                  <option value="blocked">Blocked</option>
+                </select>
+              </label>
+              <label>Priority
+                <select name="priority">
+                  <option value="1">P1 urgent</option>
+                  <option value="2">P2 important</option>
+                  <option value="3" selected>P3 normal</option>
+                  <option value="4">P4 low</option>
+                  <option value="5">P5 someday</option>
+                </select>
+              </label>
+              <label>DD <input name="due_at" type="datetime-local"></label>
+              <label class="span-2">Reminder <input name="reminder_at" type="datetime-local"></label>
+            </div>
+            <button type="submit">Create task</button>
+          </form>
+        </section>
+
+        <section class="board" aria-live="polite">
+          <div class="column" data-status="backlog">
+            <div class="column-head">
+              <h2>Backlog</h2>
+              <span class="column-count" data-count="backlog">0</span>
+            </div>
+            <p class="column-hint">Needs triage or a clear owner.</p>
+            <div class="tasks" id="backlog"></div>
+          </div>
+          <div class="column" data-status="in_progress">
+            <div class="column-head">
+              <h2>In progress</h2>
+              <span class="column-count" data-count="in_progress">0</span>
+            </div>
+            <p class="column-hint">Work that is actually moving.</p>
+            <div class="tasks" id="in_progress"></div>
+          </div>
+          <div class="column" data-status="waiting_review">
+            <div class="column-head">
+              <h2>Review</h2>
+              <span class="column-count" data-count="waiting_review">0</span>
+            </div>
+            <p class="column-hint">Codex output waiting for you.</p>
+            <div class="tasks" id="waiting_review"></div>
+          </div>
+          <div class="column" data-status="blocked">
+            <div class="column-head">
+              <h2>Blocked</h2>
+              <span class="column-count" data-count="blocked">0</span>
+            </div>
+            <p class="column-hint">Needs access, answer, or decision.</p>
+            <div class="tasks" id="blocked"></div>
+          </div>
+          <div class="column" data-status="done">
+            <div class="column-head">
+              <h2>Done</h2>
+              <span class="column-count" data-count="done">0</span>
+            </div>
+            <p class="column-hint">Closed and accepted outcomes.</p>
+            <div class="tasks" id="done"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script src="/static/app.js?v={{ app_version }}"></script>
+  </body>
+</html>
