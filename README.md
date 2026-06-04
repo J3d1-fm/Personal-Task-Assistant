@@ -96,10 +96,14 @@ Open `http://127.0.0.1:8000`.
 Use your own local `.env`; never commit real API keys, OAuth secrets, databases,
 or service-account files.
 
-## Google Login
+## Login And Auth
 
-The web UI is protected with Google OAuth. Create OAuth credentials in Google Cloud
-Console and add this redirect URI:
+Local Mode uses local development auth when Google OAuth is not configured and
+the app runs on `127.0.0.1`. Do not expose Local Mode through `--host 0.0.0.0`,
+LAN access, or a public tunnel unless you configure real authentication.
+
+For hosted or shared deployments, protect the web UI with Google OAuth. Create
+OAuth credentials in Google Cloud Console and add this redirect URI:
 
 ```text
 http://127.0.0.1:8000/auth/google/callback

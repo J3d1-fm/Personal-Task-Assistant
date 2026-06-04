@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import secrets
+import socket
 import subprocess
 import sys
 import time
@@ -131,15 +132,20 @@ def run_local_doctor() -> None:
 def run_server() -> int:
     if readyz_available():
         print("\nLocal server is already running.")
-        webbrowser.open(APP_URL)
+        open_browser()
         return 0
+    if port_in_use():
+        print("\nPort 8000 is already in use by another local app.")
+        print("Stop that app first, or start Personal Task Assistant manually on another port:")
+        print("  .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8001")
+        return 1
 
     command = [str(venv_python()), "-m", "uvicorn", "app.main:app", "--reload"]
     print("\nStarting local server. Press Ctrl+C in this window to stop it.")
     process = subprocess.Popen(command, cwd=ROOT)
     try:
         wait_for_readyz()
-        webbrowser.open(APP_URL)
+        open_browser()
         process.wait()
     except KeyboardInterrupt:
         print("\nStopping server...")
@@ -166,6 +172,19 @@ def readyz_available() -> bool:
             return response.status == 200
     except Exception:
         return False
+
+
+def port_in_use() -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(1)
+        return sock.connect_ex(("127.0.0.1", 8000)) == 0
+
+
+def open_browser() -> None:
+    try:
+        webbrowser.open(APP_URL)
+    except Exception:
+        print(f"Open {APP_URL} in your browser.")
 
 
 def venv_python() -> Path:

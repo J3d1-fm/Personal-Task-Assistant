@@ -39,7 +39,7 @@ The local installer:
 - starts the app at `http://127.0.0.1:8000`.
 
 After the first setup, use `run-local.command` to start the local app again
-without repeating the full installer.
+without repeating dependency installation.
 
 ## Local Mode Without Google Cloud
 
@@ -51,6 +51,9 @@ Local Mode is the default path for personal use:
 - Cloud Run, Firestore, Google OAuth, Secret Manager, and service accounts are
   not required.
 
+Local Mode is intended for `127.0.0.1` only. Do not expose it to a LAN, public
+tunnel, or `--host 0.0.0.0` without configuring real authentication.
+
 Check the local setup:
 
 ```bash
@@ -61,6 +64,13 @@ Start locally:
 
 ```bash
 ./run-local.command
+```
+
+If another local app is already using port `8000`, stop that app or start
+Personal Task Assistant manually on another loopback port:
+
+```bash
+.venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
 More detail: `docs/LOCAL_MODE.md`.

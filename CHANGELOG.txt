@@ -1,5 +1,15 @@
 Personal Task Assistant Changelog
 
+Version 0.3.5 - 2026-06-04
+
+- Added `scripts/run_local.py` so `run-local.command` starts the local app without reinstalling dependencies after first setup.
+- Added a clear port-8000 conflict message for Local Mode launchers.
+- Clarified that Local Mode must stay on `127.0.0.1` unless real authentication is configured.
+- Updated README auth wording so Google OAuth is described as hosted/shared deployment auth, not required Local Mode auth.
+- Made `scripts/local_doctor.py` avoid creating SQLite files during checks.
+- Expanded Local Mode dependency checks to cover the main app imports.
+- Bumped the app version from 0.3.4 to 0.3.5.
+
 Version 0.3.4 - 2026-06-04
 
 - Added explicit Local Mode documentation for running fully on one machine without Google Cloud.

@@ -3,6 +3,10 @@
 Local Mode runs Personal Task Assistant entirely on one machine. It is the
 recommended first setup for personal use, demos, and non-technical onboarding.
 
+Local Mode is intended for loopback use at `127.0.0.1`. Do not expose it with
+`--host 0.0.0.0`, LAN access, or a public tunnel unless you configure real
+authentication first.
+
 ## What Runs Locally
 
 - FastAPI web app at `http://127.0.0.1:8000`
@@ -55,10 +59,21 @@ Or run:
 ./run-local.command
 ```
 
+`run-local.command` does not reinstall dependencies after the first setup. If
+Local Mode is not installed yet, it runs the setup wizard once and then starts
+the app.
+
 Manual fallback:
 
 ```bash
 .venv/bin/uvicorn app.main:app --reload
+```
+
+If port `8000` is already used by another local app, stop that app first or run
+Personal Task Assistant on another loopback port:
+
+```bash
+.venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
 ## Check Local Mode
@@ -90,6 +105,9 @@ The doctor checks:
 - generated local secrets
 - local dependency imports
 - optional `/readyz` status
+
+The doctor does not create a new SQLite database. If the database file does not
+exist yet, the app will create it on first start.
 
 ## Local Data
 

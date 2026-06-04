@@ -1,21 +1,22 @@
 Personal Task Assistant Technical Documentation
 
-Version: 0.3.4
+Version: 0.3.5
 Last updated: 2026-06-04
 
 Overview
 
 Personal Task Assistant is a FastAPI application with a server-rendered HTML shell, static CSS/JS assets, and JSON API endpoints for task creation, task updates, agent queue reads, context ingestion, and reminders.
 
-Version 0.3.4 makes Local Mode explicit as the default no-cloud path: a
-double-click local launcher, a local configuration doctor, clearer installation
-docs, and setup-wizard flags for non-interactive local installation.
+Version 0.3.5 hardens Local Mode after independent review: repeat launch no
+longer reinstalls dependencies, docs distinguish local auth from hosted Google
+OAuth, loopback-only safety is explicit, and the doctor avoids creating database
+files while checking a broader dependency set.
 
 Changed Files
 
 - app/config.py
   Sets Settings.app_name to Personal Task Assistant.
-  Sets Settings.app_version to 0.3.4.
+  Sets Settings.app_version to 0.3.5.
   Adds local_dev_auth_enabled for non-hosted runs with no Google OAuth configured.
   Adds local_dev_user_email for the browser session used by local development.
   Adds TASK_HISTORY_SHEET_ID and TASK_HISTORY_SHEET_TAB settings for optional spreadsheet history.
@@ -79,6 +80,8 @@ Changed Files
   Mode doctor after setup. If the local server is already running, the launcher
   opens the browser instead of starting a second uvicorn process on the same port.
   Non-interactive `--yes` does not start the server unless `--start` is also set.
+  In 0.3.5, reports a clear error if port 8000 is already used by another local
+  app.
 
 - scripts/local_doctor.py
   Adds a Local Mode diagnostic that checks Python version, `.venv`, `.env`,
@@ -86,6 +89,14 @@ Changed Files
   `/readyz` status.
   Supports `--url` for custom local ports and `--require-server` when server
   availability should be mandatory.
+  In 0.3.5, avoids creating SQLite files during checks and validates the broader
+  dependency set needed by the app.
+
+- scripts/run_local.py
+  Adds a local runtime launcher that starts an already-installed Local Mode app
+  without repeating dependency installation. If `.venv` or `.env` is missing, it
+  delegates to `scripts/setup_wizard.py --yes --start`.
+  Reports a clear error when port 8000 is already used by another local app.
 
 - scripts/render_demo_gif.py
   Renders `docs/assets/human-ai-workflow-demo.gif` with ffmpeg so the README demo
@@ -96,7 +107,9 @@ Changed Files
 
 - run-local.command
   Adds a macOS double-click launcher for starting the already-installed Local
-  Mode app without repeating the full installer.
+  Mode app without reinstalling dependencies.
+  In 0.3.5, calls `scripts/run_local.py` instead of rerunning the setup wizard on
+  every launch.
 
 - adapters/telegram_polling_adapter.py
   Adds a reference Telegram Bot API polling adapter. It reads text messages,
@@ -135,16 +148,22 @@ Changed Files
 - docs/INSTALLATION.md
   Adds a user-facing installation guide and prompt for handing the repo to an AI agent.
   In 0.3.4, documents Local Mode as the default no-cloud setup.
+  In 0.3.5, clarifies loopback-only safety and that repeat launch does not
+  reinstall dependencies.
 
 - docs/AGENT_INSTALL.md
   Adds a concise installation runbook for Codex, Claude, or another coding agent.
   In 0.3.4, instructs agents to verify Local Mode with `scripts/local_doctor.py`
   and report that Google Cloud is not required.
+  In 0.3.5, instructs agents not to expose Local Mode beyond `127.0.0.1` without
+  real authentication.
 
 - docs/LOCAL_MODE.md
   Adds a full local-only operating guide covering first setup, later launches,
   local checks, SQLite data, local backups, adapters, and when hosted deployment
   becomes useful.
+  In 0.3.5, documents loopback-only safety, no-reinstall repeat launch, and
+  non-mutating doctor behavior.
 
 - LICENSE
   Adds MIT licensing for the public repository.
@@ -318,11 +337,15 @@ or service-account files. External systems such as Jira, Asana, YouTrack, Slack,
 Telegram, and email still require user-built adapters and user-provided
 credentials outside the repository.
 
-No database migration is required for version 0.3.4. The live task schema is unchanged because DD uses the existing `due_at` field and date set uses the existing `created_at` field. The only production configuration added in 0.2.4 is optional Sheets history access.
+Local Mode is intended for loopback access at `127.0.0.1`. Do not expose it with
+`--host 0.0.0.0`, LAN access, or a public tunnel unless real authentication is
+configured first.
+
+No database migration is required for version 0.3.5. The live task schema is unchanged because DD uses the existing `due_at` field and date set uses the existing `created_at` field. The only production configuration added in 0.2.4 is optional Sheets history access.
 
 Rollback Notes
 
-To roll back version 0.3.4, revert these files to the previous version:
+To roll back version 0.3.5, revert these files to the previous version:
 
 - app/config.py
 - README.md
@@ -339,6 +362,7 @@ To roll back version 0.3.4, revert these files to the previous version:
 - adapters/telegram.env.example
 - adapters/telegram_polling_adapter.py
 - scripts/local_doctor.py
+- scripts/run_local.py
 - scripts/setup_wizard.py
 
 The changelog and this technical documentation can remain as history or be reverted with the same version rollback. If rolling back to 0.3.0, the installer and agent install docs disappear but the agent queue/API behavior remains. If rolling back to 0.2.6, agent queue endpoints and automatic DD estimates disappear. If rolling back past 0.2.4, also unset `TASK_HISTORY_SHEET_ID` on Cloud Run.
@@ -378,3 +402,8 @@ Verification Performed
 - Version 0.3.4 Local Mode setup smoke passed in a temporary working-tree copy: the wizard created `.venv`, installed dependencies, created `.env`, and ran the doctor successfully.
 - Version 0.3.4 Local Mode `/readyz` smoke passed with uvicorn on a custom local port and `scripts/local_doctor.py --require-server --url`.
 - Version 0.3.4 `git diff --check` passed.
+- Independent v0.3.4 review found Local Mode onboarding issues: repeat launcher reinstalled dependencies, README auth wording conflicted with Local Mode, loopback-only safety was unclear, the doctor could create SQLite files, and dependency checks were too narrow. These are fixed in 0.3.5.
+- Version 0.3.5 Python compile check passed for app/config.py, scripts/setup_wizard.py, scripts/local_doctor.py, and scripts/run_local.py.
+- Version 0.3.5 Local Mode doctor smoke passed without creating a SQLite file when the database is absent.
+- Version 0.3.5 Local Mode launcher smoke found a port-8000 conflict with another local app; the launcher now reports this conflict before starting uvicorn.
+- Version 0.3.5 `git diff --check` passed.

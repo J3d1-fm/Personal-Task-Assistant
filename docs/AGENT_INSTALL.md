@@ -11,6 +11,8 @@ the user to understand Python, FastAPI, OAuth, or task-ingestion internals.
 ## Safety Rules
 
 - Start with local setup unless the user explicitly asks for production deploy.
+- Keep Local Mode bound to loopback (`127.0.0.1`). Do not expose it through
+  `--host 0.0.0.0`, a LAN address, or a public tunnel without real authentication.
 - Do not request or store Jira, Asana, YouTrack, Slack, Telegram, email, OAuth,
   cloud, or service-account credentials during the first local install.
 - Do not commit `.env`, SQLite databases, service-account files, or exported task
@@ -58,6 +60,7 @@ Report:
 - that the default setup uses SQLite;
 - that Google Cloud, Cloud Run, Firestore, Google OAuth, and service accounts
   are not required for Local Mode;
+- that Local Mode should stay on `127.0.0.1` unless real authentication is configured;
 - that Jira, Asana, YouTrack, Slack, Telegram, email, and similar systems require
   separate adapters;
 - the next recommended integration step, if the user named a specific source.

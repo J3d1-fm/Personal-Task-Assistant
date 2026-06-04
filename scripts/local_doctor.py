@@ -110,9 +110,10 @@ def check_sqlite_path() -> Check:
     db_path = sqlite_path_from_url(database_url)
     if db_path is None:
         return Check(False, f"Unsupported Local Mode database URL: {database_url}")
+    if not db_path.exists():
+        return Check(True, f"SQLite file will be created on first app start: {db_path}", warning=True)
     try:
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(db_path) as connection:
+        with sqlite3.connect(f"file:{db_path}?mode=rw", uri=True) as connection:
             connection.execute("select 1")
     except sqlite3.Error as exc:
         return Check(False, f"SQLite check failed for {db_path}: {exc}")
@@ -123,7 +124,11 @@ def check_imports() -> Check:
     python_path = venv_python()
     if not python_path.exists():
         return Check(False, "Python dependencies cannot be checked before .venv exists")
-    command = [str(python_path), "-c", "import fastapi, uvicorn"]
+    command = [
+        str(python_path),
+        "-c",
+        "import fastapi, uvicorn, sqlalchemy, pydantic_settings, jinja2, authlib, itsdangerous, requests",
+    ]
     result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
