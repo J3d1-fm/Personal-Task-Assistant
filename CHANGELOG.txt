@@ -1,5 +1,14 @@
 Personal Task Assistant Changelog
 
+Version 0.3.4 - 2026-06-04
+
+- Added explicit Local Mode documentation for running fully on one machine without Google Cloud.
+- Added `run-local.command` as a double-click launcher after first setup.
+- Added `scripts/local_doctor.py` to verify local SQLite, local auth, generated secrets, dependencies, and `/readyz`.
+- Extended the setup wizard with non-interactive flags and Local Mode checks.
+- Updated install and AI-agent instructions to prefer Local Mode before hosted deployment.
+- Bumped the app version from 0.3.3 to 0.3.4.
+
 Version 0.3.3 - 2026-06-04
 
 - Hardened the Telegram adapter to fail closed unless chat ids are explicitly allowed.

@@ -37,11 +37,17 @@ the user to understand Python, FastAPI, OAuth, or task-ingestion internals.
 5. Start the app through the wizard, or run:
 
    ```bash
-   .venv/bin/uvicorn app.main:app --reload
+   ./run-local.command
    ```
 
 6. Open `http://127.0.0.1:8000`.
-7. Verify `GET http://127.0.0.1:8000/readyz` returns `{"status":"ok"}`.
+7. Verify Local Mode:
+
+   ```bash
+   .venv/bin/python scripts/local_doctor.py --require-server
+   ```
+
+8. Verify `GET http://127.0.0.1:8000/readyz` returns `{"status":"ok"}`.
 
 ## What To Tell The User After Local Install
 
@@ -50,6 +56,8 @@ Report:
 - the local app URL;
 - that `.env` was created locally and must not be shared;
 - that the default setup uses SQLite;
+- that Google Cloud, Cloud Run, Firestore, Google OAuth, and service accounts
+  are not required for Local Mode;
 - that Jira, Asana, YouTrack, Slack, Telegram, email, and similar systems require
   separate adapters;
 - the next recommended integration step, if the user named a specific source.

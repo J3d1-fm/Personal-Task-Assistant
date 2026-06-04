@@ -38,6 +38,33 @@ The local installer:
 - uses SQLite by default;
 - starts the app at `http://127.0.0.1:8000`.
 
+After the first setup, use `run-local.command` to start the local app again
+without repeating the full installer.
+
+## Local Mode Without Google Cloud
+
+Local Mode is the default path for personal use:
+
+- tasks are stored in the local SQLite file `task_tracker.db`;
+- auth uses a local browser session when Google OAuth is not configured;
+- generated secrets stay in `.env`;
+- Cloud Run, Firestore, Google OAuth, Secret Manager, and service accounts are
+  not required.
+
+Check the local setup:
+
+```bash
+.venv/bin/python scripts/local_doctor.py
+```
+
+Start locally:
+
+```bash
+./run-local.command
+```
+
+More detail: `docs/LOCAL_MODE.md`.
+
 ## Terminal Installer
 
 On macOS, Linux, or Windows with Python installed:
@@ -47,6 +74,12 @@ python3 scripts/setup_wizard.py
 ```
 
 On Windows, use `python` instead of `python3` if that is how Python is installed.
+
+For non-interactive local setup:
+
+```bash
+python3 scripts/setup_wizard.py --yes --no-start
+```
 
 ## What The Installer Does Not Do
 

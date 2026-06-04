@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import os
 import secrets
 import subprocess
@@ -18,31 +19,51 @@ APP_URL = "http://127.0.0.1:8000"
 
 
 def main() -> int:
+    args = parse_args()
     print_header()
-    if not confirm("Set up a local Personal Task Assistant workspace now?", default=True):
+    if not args.yes and not confirm("Set up a local Personal Task Assistant workspace now?", default=True):
         print("\nNo changes made.")
         return 0
 
     create_virtualenv()
     install_dependencies()
     write_env_file()
+    run_local_doctor()
 
     print("\nSetup complete.")
     print(f"Local URL: {APP_URL}")
-    print("The local setup uses SQLite and local development auth.")
+    print("Local Mode uses SQLite and local development auth. Google Cloud is not required.")
 
-    if confirm("Start the app now and open it in your browser?", default=True):
+    should_start = args.start
+    if not args.yes and not args.no_start:
+        should_start = confirm("Start the app now and open it in your browser?", default=True)
+    if should_start:
         return run_server()
 
     print("\nTo start later, run:")
+    print("  ./run-local.command")
+    print("or:")
     print("  .venv/bin/uvicorn app.main:app --reload")
     return 0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Set up Personal Task Assistant Local Mode.")
+    parser.add_argument("--yes", action="store_true", help="run setup with defaults and do not prompt")
+    parser.add_argument("--start", action="store_true", help="start the local server after setup")
+    parser.add_argument("--no-start", action="store_true", help="do not start the local server after setup")
+    args = parser.parse_args()
+    if args.start and args.no_start:
+        parser.error("--start and --no-start cannot be used together")
+    return args
 
 
 def print_header() -> None:
     print("Personal Task Assistant setup")
     print("=" * 30)
-    print("This wizard creates a local development setup.")
+    print("This wizard creates a Local Mode setup for your own machine.")
+    print("It uses SQLite and local browser auth by default.")
+    print("Google Cloud, Cloud Run, Firestore, and Google OAuth are optional, not required.")
     print("It does not ask for Jira, Asana, YouTrack, Slack, Telegram, or email credentials.")
     print("Those connectors should be added later through user-built adapters.")
     print()
@@ -102,7 +123,17 @@ def write_env_file() -> None:
     print("\nCreated .env with local-only generated secrets.")
 
 
+def run_local_doctor() -> None:
+    print("\nChecking Local Mode configuration...", flush=True)
+    run([str(venv_python()), str(ROOT / "scripts" / "local_doctor.py")])
+
+
 def run_server() -> int:
+    if readyz_available():
+        print("\nLocal server is already running.")
+        webbrowser.open(APP_URL)
+        return 0
+
     command = [str(venv_python()), "-m", "uvicorn", "app.main:app", "--reload"]
     print("\nStarting local server. Press Ctrl+C in this window to stop it.")
     process = subprocess.Popen(command, cwd=ROOT)
@@ -121,16 +152,20 @@ def run_server() -> int:
 
 
 def wait_for_readyz() -> None:
-    ready_url = f"{APP_URL}/readyz"
     deadline = time.time() + 30
     while time.time() < deadline:
-        try:
-            with urllib.request.urlopen(ready_url, timeout=2) as response:
-                if response.status == 200:
-                    return
-        except Exception:
-            time.sleep(0.5)
+        if readyz_available():
+            return
+        time.sleep(0.5)
     print("Server is starting slowly. Open the URL manually if the browser does not open.")
+
+
+def readyz_available() -> bool:
+    try:
+        with urllib.request.urlopen(f"{APP_URL}/readyz", timeout=2) as response:
+            return response.status == 200
+    except Exception:
+        return False
 
 
 def venv_python() -> Path:

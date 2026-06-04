@@ -74,7 +74,13 @@ On macOS, a user can also download the repository and double-click
 `install.command`. The installer creates `.venv`, installs dependencies, writes a
 local `.env`, starts the app, and opens `http://127.0.0.1:8000`.
 
+After the first setup, double-click `run-local.command` to start the local app
+again. This Local Mode uses SQLite on your own machine and does not require
+Google Cloud, Cloud Run, Firestore, or Google OAuth.
+
 More details: `docs/INSTALLATION.md`.
+
+Local-only details: `docs/LOCAL_MODE.md`.
 
 ## Local Development
 
