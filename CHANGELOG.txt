@@ -1,5 +1,15 @@
 Personal Task Assistant Changelog
 
+Version 0.3.2 - 2026-06-04
+
+- Added a README demo section with a human plus AI agent workflow GIF.
+- Added public examples that show raw context becoming tasks and an agent queue.
+- Added a reference Telegram polling adapter for the connector contract.
+- Added adapter setup documentation and a safe env example with no real tokens.
+- Added a GitHub roadmap issue template.
+- Added launch copy and a community posting checklist.
+- Bumped the app version from 0.3.1 to 0.3.2.
+
 Version 0.3.1 - 2026-06-04
 
 - Clarified that Jira, Asana, YouTrack, Slack, Telegram, email, and similar integrations are supported through user-built adapters that call the JSON API; source-specific adapter implementation and credentials remain the user's responsibility.

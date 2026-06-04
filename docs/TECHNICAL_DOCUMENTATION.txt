@@ -1,21 +1,21 @@
 Personal Task Assistant Technical Documentation
 
-Version: 0.3.1
+Version: 0.3.2
 Last updated: 2026-06-04
 
 Overview
 
 Personal Task Assistant is a FastAPI application with a server-rendered HTML shell, static CSS/JS assets, and JSON API endpoints for task creation, task updates, agent queue reads, context ingestion, and reminders.
 
-Version 0.3.1 keeps the 0.3.0 runtime behavior and adds a user-friendly local
-installation path: a macOS click installer, a cross-platform Python setup wizard,
-and AI-agent installation instructions for non-technical users.
+Version 0.3.2 keeps the 0.3.1 runtime behavior and strengthens the public OSS
+surface: README demo material, public examples, a reproducible workflow GIF, a
+reference Telegram polling adapter, and GitHub roadmap issue structure.
 
 Changed Files
 
 - app/config.py
   Sets Settings.app_name to Personal Task Assistant.
-  Sets Settings.app_version to 0.3.1.
+  Sets Settings.app_version to 0.3.2.
   Adds local_dev_auth_enabled for non-hosted runs with no Google OAuth configured.
   Adds local_dev_user_email for the browser session used by local development.
   Adds TASK_HISTORY_SHEET_ID and TASK_HISTORY_SHEET_TAB settings for optional spreadsheet history.
@@ -76,8 +76,38 @@ Changed Files
 - scripts/setup_wizard.py
   Adds a local setup wizard that creates `.venv`, installs dependencies, writes a generated local `.env`, starts uvicorn, and opens the local app URL.
 
+- scripts/render_demo_gif.py
+  Renders `docs/assets/human-ai-workflow-demo.gif` with ffmpeg so the README demo
+  asset can be regenerated without adding image libraries to the app runtime.
+
 - install.command
   Adds a macOS double-click entrypoint that runs `python3 scripts/setup_wizard.py`.
+
+- adapters/telegram_polling_adapter.py
+  Adds a reference Telegram Bot API polling adapter. It reads text messages,
+  extracts prefixed task lines, and sends normalized payloads to
+  `POST /api/agent/ingest/context`.
+
+- adapters/README.md
+  Documents adapter safety rules, Telegram setup, supported task prefixes, and
+  dry-run usage.
+
+- adapters/telegram.env.example
+  Provides a placeholder-only environment example for Telegram adapter setup.
+
+- docs/EXAMPLES.md
+  Adds public examples showing raw context, normalized tasks, agent queue reads,
+  and a Jira/Asana-style adapter payload.
+
+- docs/LAUNCH.md
+  Adds positioning text, post templates, and a community launch checklist.
+
+- examples/
+  Adds sample raw Telegram input, ingest payload, and agent queue response JSON
+  for public demos and documentation.
+
+- .github/ISSUE_TEMPLATE/roadmap.yml
+  Adds a public roadmap issue template.
 
 - docs/INSTALLATION.md
   Adds a user-facing installation guide and prompt for handing the repo to an AI agent.
@@ -146,6 +176,32 @@ POST /api/agent/ingest/context
 
 Alias for context ingestion so external agent clients have a consistent `/api/agent/*` surface.
 
+Reference Telegram adapter:
+
+The adapter is not part of the FastAPI runtime. It is an optional external
+client process that requires:
+
+- TELEGRAM_BOT_TOKEN
+- TASK_TRACKER_URL
+- TASK_TRACKER_API_KEY
+
+It supports optional TELEGRAM_ALLOWED_CHAT_IDS, TELEGRAM_ADAPTER_STATE,
+TELEGRAM_POLL_TIMEOUT, and TELEGRAM_POLL_INTERVAL values. By default it stores
+Telegram update offset state under `.adapter_state/telegram_polling_state.json`,
+which is ignored by git.
+
+The parser recognizes prefixed lines:
+
+- `codex:`, `agent:`, and `ai:` become Codex-owned backlog tasks.
+- `me:` and `human:` become human-owned backlog tasks.
+- `review:` becomes a human-owned waiting-review task.
+- `blocked:` becomes a blocked task.
+- `todo:` becomes an unassigned backlog task.
+
+Optional `P1` through `P5` priority prefixes and `dd:YYYY-MM-DD` or
+`due:YYYY-MM-DD` suffixes are supported. If no DD is provided, the server still
+applies the normal DD estimate by priority.
+
 Storage And Retention
 
 Production storage:
@@ -207,23 +263,29 @@ The local session email is the first configured `ALLOWED_GOOGLE_EMAILS` value, o
 
 This fallback is intended only for local development so the UI can be inspected at `http://127.0.0.1:8000/` without creating Google OAuth credentials.
 
-No database migration is required for version 0.3.1. The live task schema is unchanged because DD uses the existing `due_at` field and date set uses the existing `created_at` field. The only production configuration added in 0.2.4 is optional Sheets history access.
+No database migration is required for version 0.3.2. The live task schema is unchanged because DD uses the existing `due_at` field and date set uses the existing `created_at` field. The only production configuration added in 0.2.4 is optional Sheets history access.
 
 Rollback Notes
 
-To roll back version 0.3.1, revert these files to the previous version:
+To roll back version 0.3.2, revert these files to the previous version:
 
 - app/config.py
-- app/main.py
-- app/schemas.py
-- app/static/app.js
-- app/static/styles.css
-- app/store.py
-- app/templates/index.html
-- install.command
-- scripts/setup_wizard.py
-- docs/INSTALLATION.md
-- docs/AGENT_INSTALL.md
+- README.md
+- CHANGELOG.txt
+- docs/API.md
+- docs/EXAMPLES.md
+- docs/LAUNCH.md
+- docs/TECHNICAL_DOCUMENTATION.txt
+- docs/assets/human-ai-workflow-demo.gif
+- examples/agent-ingest-payload.json
+- examples/agent-queue-response.json
+- examples/telegram-message.txt
+- adapters/README.md
+- adapters/telegram.env.example
+- adapters/telegram_polling_adapter.py
+- scripts/render_demo_gif.py
+- .github/ISSUE_TEMPLATE/roadmap.yml
+- .gitignore
 
 The changelog and this technical documentation can remain as history or be reverted with the same version rollback. If rolling back to 0.3.0, the installer and agent install docs disappear but the agent queue/API behavior remains. If rolling back to 0.2.6, agent queue endpoints and automatic DD estimates disappear. If rolling back past 0.2.4, also unset `TASK_HISTORY_SHEET_ID` on Cloud Run.
 
@@ -250,3 +312,6 @@ Verification Performed
 - Version 0.3.1 Python compile check passed for app/config.py, app/main.py, app/store.py, scripts/setup_wizard.py, and scripts/reminders.py.
 - Version 0.3.1 staged `git diff --check` passed.
 - Version 0.3.1 installer smoke passed in `/private/tmp/pta-installer-smoke`: the wizard created `.venv`, installed dependencies, created a local `.env` with generated secrets, and exited cleanly when asked not to start the server.
+- Version 0.3.2 Python compile check passed for app/config.py, adapters/telegram_polling_adapter.py, and scripts/render_demo_gif.py.
+- Version 0.3.2 demo GIF rendering passed with local ffmpeg.
+- Version 0.3.2 `git diff --check` passed.

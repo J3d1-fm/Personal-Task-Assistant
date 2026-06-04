@@ -1,0 +1,32 @@
+{
+  "summary": {
+    "active": 4,
+    "overdue": 0,
+    "due_soon": 1,
+    "codex_ready": 1,
+    "human_input": 2,
+    "review": 1,
+    "blocked": 0,
+    "unassigned": 1
+  },
+  "tasks": [
+    {
+      "id": 42,
+      "title": "Check why the Cloud Run deploy failed and open a PR if the fix is safe",
+      "description": "Created from Telegram message 987.",
+      "status": "backlog",
+      "assignee": "codex",
+      "origin": "telegram",
+      "priority": 2,
+      "source_name": "Telegram chat 123456789",
+      "source_url": null,
+      "source_context": "codex: check why the Cloud Run deploy failed and open a PR if the fix is safe\nme: approve the production deploy after Codex posts the diff\nreview: inspect the README demo copy before publishing\ntodo: post the project to LinkedIn and Hacker News",
+      "due_at": "2026-06-07T12:00:00Z",
+      "reminder_at": null,
+      "reminder_last_sent_at": null,
+      "completed_at": null,
+      "created_at": "2026-06-04T12:00:00Z",
+      "updated_at": "2026-06-04T12:00:00Z"
+    }
+  ]
+}

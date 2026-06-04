@@ -31,6 +31,16 @@ Users should implement their own adapters for each source:
 Keep credentials in the adapter runtime or secret manager. Do not send API keys,
 OAuth tokens, service-account files, or raw private exports into the repository.
 
+The repository includes a safe Telegram polling adapter as a reference
+implementation. It demonstrates the contract without requiring a public webhook
+URL or any committed credentials:
+
+```bash
+python3 adapters/telegram_polling_adapter.py --once --dry-run
+```
+
+See `adapters/README.md`.
+
 ## Create a Task
 
 ```bash

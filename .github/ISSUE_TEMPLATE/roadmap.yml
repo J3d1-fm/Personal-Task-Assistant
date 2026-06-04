@@ -1,0 +1,33 @@
+name: Roadmap item
+description: Track a public roadmap item for Personal Task Assistant
+title: "[Roadmap] "
+labels: ["roadmap"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: What should be true when this is complete?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters
+      description: How does this improve human/AI agent collaboration?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What belongs in this item and what is intentionally out of scope?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How can maintainers verify that the item is done?
+    validations:
+      required: true

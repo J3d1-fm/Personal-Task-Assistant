@@ -1,0 +1,4 @@
+codex: check why the Cloud Run deploy failed and open a PR if the fix is safe
+me: approve the production deploy after Codex posts the diff
+review: inspect the README demo copy before publishing
+todo: post the project to LinkedIn and Hacker News

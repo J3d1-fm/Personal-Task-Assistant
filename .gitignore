@@ -9,6 +9,8 @@ __pycache__/
 *.sqlite3
 .DS_Store
 .codex/
+.adapter_state/
+source.tar
 docs/DAILY_INBOX_TASK_IMPORT_TECH.txt
 credentials*.json
 client_secret*.json

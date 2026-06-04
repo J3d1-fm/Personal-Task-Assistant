@@ -12,16 +12,48 @@ scheduled polling jobs. Those source-specific adapters are intentionally left to
 the user to implement and operate for their own accounts, permissions, and data
 rules.
 
+It is not another task tracker. It is the missing coordination layer for AI
+agents: a place where humans decide, agents execute, and both sides share one
+operational queue.
+
+![Human and AI agent workflow demo](docs/assets/human-ai-workflow-demo.gif)
+
+## Demo Workflow
+
+1. A human sends messy context from Telegram, Slack, Jira, email, or a meeting note.
+2. An agent or adapter turns that context into normalized tasks with owners,
+   priority, source context, date set, and DD.
+3. Codex-owned work moves into the agent queue so the AI agent can start without
+   another prompt.
+4. Human-owned work stays visible as the smallest possible set of decisions,
+   reviews, approvals, and missing inputs.
+5. Finished agent work moves to `Waiting review`, so the human stays in control
+   without manually tracking every agent action.
+
+See concrete public examples in `docs/EXAMPLES.md`.
+
 It provides:
 
 - A web UI for reviewing, sorting, assigning, and completing human/AI tasks.
 - A JSON API for agents and integrations to create, ingest, read, and update tasks.
 - A connector contract for user-built adapters from task trackers, chats, and inboxes.
+- A reference Telegram polling adapter that demonstrates the connector pattern.
 - Database-backed storage, with SQLite for local development and Firestore for Google Cloud.
 - Automatic DD estimates when the source did not provide a deadline.
 - Reminder fields so missed tasks can be queried and notified.
 - Role-oriented queues for agent-ready work, human input, review, blocked work,
   and unassigned tasks.
+
+## Why It Matters
+
+AI coding and operations agents can already perform real work, but teams still
+lack a practical shared interface for deciding what the agent should do, what
+requires a human, what is blocked, and what is ready for review. Personal Task
+Assistant focuses on that collaboration boundary.
+
+The project is intentionally small and inspectable: the UI is the operating
+surface, the API is the agent contract, and adapters connect existing tools
+without forcing users to move every workflow into one vendor ecosystem.
 
 ## Install For Non-Technical Users
 
@@ -124,6 +156,30 @@ The app supplies the task model, prioritization surface, DD defaults, and agent
 queue API. The user remains responsible for implementing each external adapter,
 storing its credentials safely, and deciding what data is allowed to enter the
 assistant.
+
+### Reference Adapter
+
+The repository includes a Telegram polling adapter in
+`adapters/telegram_polling_adapter.py`. It is a safe reference implementation for
+the connector model:
+
+- reads Telegram Bot API updates with a user-provided bot token;
+- extracts prefixed task lines such as `codex:`, `me:`, `review:`, and `todo:`;
+- sends normalized tasks to `POST /api/agent/ingest/context`;
+- stores only a local update offset and never commits credentials.
+
+See `adapters/README.md` for setup.
+
+## Roadmap
+
+The public roadmap lives in GitHub Issues. Launch copy and posting checklist are
+in `docs/LAUNCH.md`. The first milestones are:
+
+- stronger demo material and public examples;
+- Telegram, Slack, Jira, Asana, and YouTrack adapter patterns;
+- agent execution lifecycle states;
+- safer onboarding for non-technical users;
+- public templates for human/AI task operating rhythms.
 
 ## Google Cloud
 

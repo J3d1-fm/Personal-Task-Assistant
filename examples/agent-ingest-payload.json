@@ -1,0 +1,31 @@
+{
+  "origin": "telegram",
+  "source_name": "Telegram chat 123456789",
+  "source_context": "codex: check why the Cloud Run deploy failed and open a PR if the fix is safe\nme: approve the production deploy after Codex posts the diff\nreview: inspect the README demo copy before publishing\ntodo: post the project to LinkedIn and Hacker News",
+  "tasks": [
+    {
+      "title": "Check why the Cloud Run deploy failed and open a PR if the fix is safe",
+      "assignee": "codex",
+      "status": "backlog",
+      "priority": 2
+    },
+    {
+      "title": "Approve the production deploy after Codex posts the diff",
+      "assignee": "me",
+      "status": "backlog",
+      "priority": 2
+    },
+    {
+      "title": "Inspect the README demo copy before publishing",
+      "assignee": "me",
+      "status": "waiting_review",
+      "priority": 2
+    },
+    {
+      "title": "Post the project to LinkedIn and Hacker News",
+      "assignee": "unassigned",
+      "status": "backlog",
+      "priority": 3
+    }
+  ]
+}
