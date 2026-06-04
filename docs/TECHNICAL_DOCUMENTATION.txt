@@ -1,21 +1,22 @@
 Personal Task Assistant Technical Documentation
 
-Version: 0.3.2
+Version: 0.3.3
 Last updated: 2026-06-04
 
 Overview
 
 Personal Task Assistant is a FastAPI application with a server-rendered HTML shell, static CSS/JS assets, and JSON API endpoints for task creation, task updates, agent queue reads, context ingestion, and reminders.
 
-Version 0.3.2 keeps the 0.3.1 runtime behavior and strengthens the public OSS
-surface: README demo material, public examples, a reproducible workflow GIF, a
-reference Telegram polling adapter, and GitHub roadmap issue structure.
+Version 0.3.3 keeps the 0.3.2 public OSS surface and hardens the reference
+Telegram adapter after independent review: token-safe error handling, fail-closed
+chat allowlisting, per-update offset persistence, malformed-DD tolerance, and
+clearer public examples.
 
 Changed Files
 
 - app/config.py
   Sets Settings.app_name to Personal Task Assistant.
-  Sets Settings.app_version to 0.3.2.
+  Sets Settings.app_version to 0.3.3.
   Adds local_dev_auth_enabled for non-hosted runs with no Google OAuth configured.
   Adds local_dev_user_email for the browser session used by local development.
   Adds TASK_HISTORY_SHEET_ID and TASK_HISTORY_SHEET_TAB settings for optional spreadsheet history.
@@ -87,6 +88,11 @@ Changed Files
   Adds a reference Telegram Bot API polling adapter. It reads text messages,
   extracts prefixed task lines, and sends normalized payloads to
   `POST /api/agent/ingest/context`.
+  In 0.3.3, the adapter fails closed unless allowed chat ids are configured or
+  `TELEGRAM_ALLOW_ALL_CHATS=true` is explicitly set. It sanitizes Telegram Bot
+  API errors before printing them, persists offset state after each successfully
+  processed update, and treats malformed `dd:` values as missing DD instead of
+  crashing the polling loop.
 
 - adapters/README.md
   Documents adapter safety rules, Telegram setup, supported task prefixes, and
@@ -94,10 +100,13 @@ Changed Files
 
 - adapters/telegram.env.example
   Provides a placeholder-only environment example for Telegram adapter setup.
+  In 0.3.3, it includes a synthetic allowed chat id and the explicit
+  `TELEGRAM_ALLOW_ALL_CHATS=false` setting.
 
 - docs/EXAMPLES.md
   Adds public examples showing raw context, normalized tasks, agent queue reads,
   and a Jira/Asana-style adapter payload.
+  In 0.3.3, the API-like examples include the required bearer auth header.
 
 - docs/LAUNCH.md
   Adds positioning text, post templates, and a community launch checklist.
@@ -185,10 +194,14 @@ client process that requires:
 - TASK_TRACKER_URL
 - TASK_TRACKER_API_KEY
 
-It supports optional TELEGRAM_ALLOWED_CHAT_IDS, TELEGRAM_ADAPTER_STATE,
-TELEGRAM_POLL_TIMEOUT, and TELEGRAM_POLL_INTERVAL values. By default it stores
-Telegram update offset state under `.adapter_state/telegram_polling_state.json`,
-which is ignored by git.
+It supports TELEGRAM_ALLOWED_CHAT_IDS or explicit TELEGRAM_ALLOW_ALL_CHATS, plus
+optional TELEGRAM_ADAPTER_STATE, TELEGRAM_POLL_TIMEOUT, and
+TELEGRAM_POLL_INTERVAL values. By default it stores Telegram update offset state
+under `.adapter_state/telegram_polling_state.json`, which is ignored by git.
+
+TELEGRAM_ALLOWED_CHAT_IDS is required unless TELEGRAM_ALLOW_ALL_CHATS=true is set
+intentionally. This fail-closed behavior prevents a public bot from accepting
+task injection from arbitrary Telegram chats by default.
 
 The parser recognizes prefixed lines:
 
@@ -201,6 +214,9 @@ The parser recognizes prefixed lines:
 Optional `P1` through `P5` priority prefixes and `dd:YYYY-MM-DD` or
 `due:YYYY-MM-DD` suffixes are supported. If no DD is provided, the server still
 applies the normal DD estimate by priority.
+
+Malformed DD values are ignored by the adapter and then handled by the server's
+normal DD estimate.
 
 Storage And Retention
 
@@ -263,11 +279,11 @@ The local session email is the first configured `ALLOWED_GOOGLE_EMAILS` value, o
 
 This fallback is intended only for local development so the UI can be inspected at `http://127.0.0.1:8000/` without creating Google OAuth credentials.
 
-No database migration is required for version 0.3.2. The live task schema is unchanged because DD uses the existing `due_at` field and date set uses the existing `created_at` field. The only production configuration added in 0.2.4 is optional Sheets history access.
+No database migration is required for version 0.3.3. The live task schema is unchanged because DD uses the existing `due_at` field and date set uses the existing `created_at` field. The only production configuration added in 0.2.4 is optional Sheets history access.
 
 Rollback Notes
 
-To roll back version 0.3.2, revert these files to the previous version:
+To roll back version 0.3.3, revert these files to the previous version:
 
 - app/config.py
 - README.md
@@ -276,16 +292,9 @@ To roll back version 0.3.2, revert these files to the previous version:
 - docs/EXAMPLES.md
 - docs/LAUNCH.md
 - docs/TECHNICAL_DOCUMENTATION.txt
-- docs/assets/human-ai-workflow-demo.gif
-- examples/agent-ingest-payload.json
-- examples/agent-queue-response.json
-- examples/telegram-message.txt
 - adapters/README.md
 - adapters/telegram.env.example
 - adapters/telegram_polling_adapter.py
-- scripts/render_demo_gif.py
-- .github/ISSUE_TEMPLATE/roadmap.yml
-- .gitignore
 
 The changelog and this technical documentation can remain as history or be reverted with the same version rollback. If rolling back to 0.3.0, the installer and agent install docs disappear but the agent queue/API behavior remains. If rolling back to 0.2.6, agent queue endpoints and automatic DD estimates disappear. If rolling back past 0.2.4, also unset `TASK_HISTORY_SHEET_ID` on Cloud Run.
 
@@ -315,3 +324,8 @@ Verification Performed
 - Version 0.3.2 Python compile check passed for app/config.py, adapters/telegram_polling_adapter.py, and scripts/render_demo_gif.py.
 - Version 0.3.2 demo GIF rendering passed with local ffmpeg.
 - Version 0.3.2 `git diff --check` passed.
+- Independent v0.3.2 review found launch-blocking Telegram adapter security issues: token leakage in errors and open-by-default chat intake. Both are fixed in 0.3.3.
+- Independent v0.3.2 review also found reliability/documentation issues: batch-only offset persistence, malformed DD crashes, missing auth headers in public examples, and README wording that implied a built-in agent runner. These are fixed in 0.3.3.
+- Version 0.3.3 Python compile check passed for app/config.py and adapters/telegram_polling_adapter.py.
+- Version 0.3.3 parser smoke passed for allowed-chat config, malformed DD handling, and auth example text.
+- Version 0.3.3 `git diff --check` passed.

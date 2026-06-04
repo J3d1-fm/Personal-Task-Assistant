@@ -1,5 +1,15 @@
 Personal Task Assistant Changelog
 
+Version 0.3.3 - 2026-06-04
+
+- Hardened the Telegram adapter to fail closed unless chat ids are explicitly allowed.
+- Added `TELEGRAM_ALLOW_ALL_CHATS` as an explicit override for unrestricted Telegram intake.
+- Sanitized Telegram Bot API errors so bot tokens are not printed in adapter logs.
+- Persisted Telegram update offset after each successfully processed update.
+- Made malformed `dd:` values non-fatal in Telegram task parsing.
+- Clarified API auth headers in public examples and tightened README positioning around connected agents.
+- Bumped the app version from 0.3.2 to 0.3.3.
+
 Version 0.3.2 - 2026-06-04
 
 - Added a README demo section with a human plus AI agent workflow GIF.

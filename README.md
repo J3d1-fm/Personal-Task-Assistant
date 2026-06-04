@@ -1,9 +1,10 @@
 # Personal Task Assistant
 
 Personal Task Assistant is an interface for collaboration between a person and an
-AI agent. The agent parses tasks from context, turns them into an operational
-queue, assigns priority and execution roles, starts work that does not need human
-input, and keeps human-dependent tasks visible with minimal required input.
+AI agent. It turns tasks parsed by an agent or adapter into an operational queue,
+assigns priority and execution roles, exposes agent-ready work for connected
+agents to pick up, and keeps human-dependent tasks visible with minimal required
+input.
 
 It is connector-ready rather than locked to one source. User-provided adapters
 can connect Jira, Asana, YouTrack, Linear, Trello, Slack, Telegram, email, or
@@ -23,8 +24,8 @@ operational queue.
 1. A human sends messy context from Telegram, Slack, Jira, email, or a meeting note.
 2. An agent or adapter turns that context into normalized tasks with owners,
    priority, source context, date set, and DD.
-3. Codex-owned work moves into the agent queue so the AI agent can start without
-   another prompt.
+3. Codex-owned work moves into the agent queue so a connected AI agent can read
+   it and start without another prompt.
 4. Human-owned work stays visible as the smallest possible set of decisions,
    reviews, approvals, and missing inputs.
 5. Finished agent work moves to `Waiting review`, so the human stays in control

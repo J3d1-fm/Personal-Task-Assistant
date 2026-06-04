@@ -31,6 +31,7 @@ TELEGRAM_BOT_TOKEN=...
 TASK_TRACKER_URL=http://127.0.0.1:8000
 TASK_TRACKER_API_KEY=...
 TELEGRAM_ALLOWED_CHAT_IDS=123456789
+TELEGRAM_ALLOW_ALL_CHATS=false
 ```
 
 Run a dry test:
@@ -79,3 +80,7 @@ codex: prepare release notes dd:2026-06-07
 The adapter stores its Telegram update offset in
 `.adapter_state/telegram_polling_state.json` by default. That directory is
 ignored by git.
+
+The adapter fails closed when `TELEGRAM_ALLOWED_CHAT_IDS` is empty. To accept
+updates from every chat intentionally, set `TELEGRAM_ALLOW_ALL_CHATS=true`; this
+is not recommended for public bots.

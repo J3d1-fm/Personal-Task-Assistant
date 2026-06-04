@@ -37,6 +37,7 @@ An AI agent reads:
 
 ```http
 GET /api/agent/queue?assignee=codex&sort=smart&limit=10
+Authorization: Bearer $TASK_TRACKER_API_KEY
 ```
 
 The agent chooses the highest priority task it can do without a human:
@@ -55,6 +56,7 @@ Then it marks the task as active:
 
 ```http
 PATCH /api/tasks/42
+Authorization: Bearer $TASK_TRACKER_API_KEY
 Content-Type: application/json
 
 {"status": "in_progress", "assignee": "codex"}
@@ -64,6 +66,7 @@ When complete, the agent moves it to review instead of closing it silently:
 
 ```http
 PATCH /api/tasks/42
+Authorization: Bearer $TASK_TRACKER_API_KEY
 Content-Type: application/json
 
 {"status": "waiting_review"}
@@ -76,6 +79,7 @@ receive a webhook event or poll an API, then call:
 
 ```http
 POST /api/agent/ingest/context
+Authorization: Bearer $TASK_TRACKER_API_KEY
 Content-Type: application/json
 ```
 
