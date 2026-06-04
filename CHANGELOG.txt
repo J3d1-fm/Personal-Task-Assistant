@@ -1,5 +1,9 @@
 Personal Task Assistant Changelog
 
+Unreleased
+
+- Clarified that Jira, Asana, YouTrack, Slack, Telegram, email, and similar integrations are supported through user-built adapters that call the JSON API; source-specific adapter implementation and credentials remain the user's responsibility.
+
 Version 0.3.0 - 2026-06-04
 
 - Renamed the product surface to Personal Task Assistant for human/AI task collaboration.

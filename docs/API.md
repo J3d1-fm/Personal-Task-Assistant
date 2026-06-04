@@ -13,6 +13,24 @@ priority:
 - P4: about 14 days
 - P5: about 30 days
 
+## Connector Adapters
+
+Personal Task Assistant exposes a connector contract; it does not include
+ready-made credentials or source-specific clients for Jira, Asana, YouTrack,
+Linear, Trello, Slack, Telegram, email, or similar systems.
+
+Users should implement their own adapters for each source:
+
+- Webhook adapters receive events from task trackers or chat tools and call
+  `POST /api/agent/ingest/context`.
+- Polling adapters periodically read source APIs and call `POST /api/agent/tasks`
+  or `POST /api/ingest/context`.
+- Sync adapters read `GET /api/agent/queue` and update external trackers through
+  the external tool's own API.
+
+Keep credentials in the adapter runtime or secret manager. Do not send API keys,
+OAuth tokens, service-account files, or raw private exports into the repository.
+
 ## Create a Task
 
 ```bash

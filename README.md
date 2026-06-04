@@ -5,10 +5,18 @@ AI agent. The agent parses tasks from context, turns them into an operational
 queue, assigns priority and execution roles, starts work that does not need human
 input, and keeps human-dependent tasks visible with minimal required input.
 
+It is connector-ready rather than locked to one source. User-provided adapters
+can connect Jira, Asana, YouTrack, Linear, Trello, Slack, Telegram, email, or
+other systems by calling the JSON API, forwarding webhook events, or running
+scheduled polling jobs. Those source-specific adapters are intentionally left to
+the user to implement and operate for their own accounts, permissions, and data
+rules.
+
 It provides:
 
 - A web UI for reviewing, sorting, assigning, and completing human/AI tasks.
 - A JSON API for agents and integrations to create, ingest, read, and update tasks.
+- A connector contract for user-built adapters from task trackers, chats, and inboxes.
 - Database-backed storage, with SQLite for local development and Firestore for Google Cloud.
 - Automatic DD estimates when the source did not provide a deadline.
 - Reminder fields so missed tasks can be queried and notified.
@@ -81,6 +89,21 @@ Main endpoints:
 
 For day-to-day PM usage, see `docs/PM_GUIDE.md`. For integration examples, see
 `docs/API.md`.
+
+## Integration Model
+
+Personal Task Assistant does not ship with built-in Jira, Asana, YouTrack,
+Slack, Telegram, or email credentials. Instead, integrations should be built as
+small adapters controlled by the user:
+
+- Webhook adapters receive events from systems such as Jira, Asana, YouTrack, or Slack and call `POST /api/agent/ingest/context`.
+- Polling adapters periodically read systems such as Telegram, email, or task trackers and create normalized tasks through `POST /api/agent/tasks`.
+- Sync adapters can read `GET /api/agent/queue` and update external tools through their own APIs.
+
+The app supplies the task model, prioritization surface, DD defaults, and agent
+queue API. The user remains responsible for implementing each external adapter,
+storing its credentials safely, and deciding what data is allowed to enter the
+assistant.
 
 ## Google Cloud
 
