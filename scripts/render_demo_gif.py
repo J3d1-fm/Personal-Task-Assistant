@@ -13,7 +13,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = REPO_ROOT / "docs" / "assets" / "human-ai-workflow-demo.gif"
 SIZE = "1280x720"

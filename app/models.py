@@ -54,6 +54,7 @@ class Task(Base):
     source_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+    external_id: Mapped[str | None] = mapped_column(String(200), nullable=True, unique=True, index=True)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     reminder_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     reminder_last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

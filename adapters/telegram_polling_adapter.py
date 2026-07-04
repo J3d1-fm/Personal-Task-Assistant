@@ -15,12 +15,12 @@ import re
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, time as datetime_time, timezone
+from datetime import datetime, timezone
+from datetime import time as datetime_time
 from pathlib import Path
 from typing import Any
 
 import requests
-
 
 TASK_PREFIX_RE = re.compile(
     r"^\s*(?:(p[1-5])\s+)?(codex|agent|ai|me|human|review|blocked|todo)\s*:\s*(.+?)\s*$",
@@ -237,7 +237,8 @@ def build_source_url(message: dict[str, Any]) -> str | None:
 
 def build_ingest_payload(message: dict[str, Any], tasks: list[dict[str, Any]]) -> dict[str, Any]:
     chat = message.get("chat", {})
-    chat_title = chat.get("title") or chat.get("username") or chat.get("first_name") or chat.get("id")
+    chat_id = chat.get("id")
+    chat_title = chat.get("title") or chat.get("username") or chat.get("first_name") or chat_id
     text = message.get("text") or ""
     message_id = message.get("message_id")
     return {
@@ -249,8 +250,9 @@ def build_ingest_payload(message: dict[str, Any], tasks: list[dict[str, Any]]) -
             {
                 **task,
                 "description": f"{task['description']} Telegram message {message_id}.",
+                "external_id": f"telegram:{chat_id}:{message_id}:{index}",
             }
-            for task in tasks
+            for index, task in enumerate(tasks)
         ],
     }
 
@@ -307,7 +309,7 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except KeyboardInterrupt:
-        raise SystemExit(130)
+        raise SystemExit(130) from None
     except RuntimeError as exc:
         print(f"adapter error: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from None

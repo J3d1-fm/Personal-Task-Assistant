@@ -1,5 +1,92 @@
 Personal Task Assistant Changelog
 
+Version 0.4.0 - 2026-07-04
+
+Agent coordination:
+- Added `POST /api/agent/claim` so a connected agent can atomically take the
+  top-ranked Codex backlog task. The claim is a conditional backlog ->
+  in_progress transition (conditional UPDATE in SQLite, transaction in
+  Firestore), so multiple parallel agents polling the same queue can never
+  claim the same task twice; the loser simply receives the next candidate or
+  404 when nothing is claimable.
+- Added `GET /api/agent/queue/summary` as a cheap polling endpoint that returns
+  only the queue metrics block without loading, sorting, or serializing the
+  task list.
+- Claim events are recorded in task history with the `claimed` action and the
+  `agent_api` note, including the previous task state.
+
+Idempotent ingest:
+- Added an optional `external_id` field (unique, up to 200 characters) to the
+  task model, API schemas, and both stores.
+- `POST /api/ingest/context` and `POST /api/agent/ingest/context` now
+  deduplicate by `external_id`: replayed batches return the existing tasks in
+  a new `duplicates` response list instead of creating copies, so webhook
+  retries and adapters with lost offset state are safe to re-run.
+- Direct task creation (`POST /api/tasks`, `POST /api/agent/tasks`) returns
+  `409 Conflict` when the `external_id` already exists; uniqueness is also
+  enforced by a database-level unique index.
+- The reference Telegram adapter now stamps every ingested task with
+  `telegram:<chat_id>:<message_id>:<line_index>` so repeated polling of the
+  same messages cannot create duplicate tasks.
+
+Database migrations:
+- Introduced Alembic schema migrations for the SQL-backed store (revision 0001
+  reproduces the 0.3.x schema, revision 0002 adds `external_id`).
+- Startup now runs `alembic upgrade head` instead of `create_all`, so future
+  schema changes apply automatically to existing local databases.
+- Databases created by older releases (no `alembic_version` table) are detected
+  by column inspection and stamped at the matching revision before upgrading,
+  covering both pre-0.4.0 databases and databases created via `create_all`.
+- `run-local.command` now detects missing dependencies after a `git pull`
+  (such as the new Alembic requirement) and installs them into the existing
+  `.venv` before starting the server.
+
+Performance:
+- Firestore `list_tasks` now filters `done`/`cancelled` tasks server-side with
+  a `status not-in` query, so agent polling no longer reads the completed
+  backlog from Firestore on every request; this cuts document reads and cost
+  as history accumulates.
+- `GET /api/agent/queue` no longer fetches all tasks including done ones when
+  `include_done` is false; the summary is computed from the same single
+  active-task read.
+- Google Sheets task-history writes moved off the request path into FastAPI
+  BackgroundTasks, so create, update, delete, ingest, and claim respond without
+  waiting for the Sheets API when history export is enabled.
+- Smart-rank sorting and queue summaries now compute "now" once per request
+  instead of once per comparison, making ranking consistent within a response.
+- Added `limit`/`offset` pagination to `GET /api/tasks` (limit 1-500).
+
+Security:
+- Local development auto-login is now enforced in the app itself: it only
+  activates for requests arriving from the loopback interface, so accidentally
+  starting Local Mode on `0.0.0.0` no longer signs in remote visitors; they
+  see the auth setup page instead.
+- API key comparison uses constant-time `secrets.compare_digest` instead of
+  string equality.
+- The Docker image now runs as a non-root `appuser` and includes the migration
+  files needed at startup.
+
+Testing and tooling:
+- Added a pytest suite (41 tests) covering task CRUD and auth, DD defaults,
+  done/completed_at transitions, pagination, external_id conflicts, agent
+  queue summaries/sorting/filters, atomic claim behavior, context-ingest
+  deduplication, reminder due logic, the legacy-database migration path, local
+  auth loopback rules, and the Telegram adapter parser.
+- Added a GitHub Actions CI workflow that runs Ruff lint and pytest on pushes
+  to main and on pull requests.
+- Added Ruff configuration in pyproject.toml and normalized import order across
+  the codebase; added requirements-dev.txt with pinned pytest and ruff.
+- Replaced the deprecated FastAPI `on_event("startup")` hook with a lifespan
+  context and updated template responses to the current Starlette signature,
+  removing deprecation warnings.
+
+Housekeeping:
+- Restored the accidentally deleted `.env.example` referenced by the README
+  install steps.
+- Documented the new endpoints, pagination, external_id deduplication, testing
+  workflow, and migration behavior in README.md and docs/API.md.
+- Bumped the app version from 0.3.6 to 0.4.0.
+
 Version 0.3.6 - 2026-06-04
 
 - Made `scripts/local_doctor.py` validate the real `app.main` startup import path instead of a partial dependency list.

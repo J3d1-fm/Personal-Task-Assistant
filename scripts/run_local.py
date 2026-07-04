@@ -10,7 +10,6 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 ENV_FILE = ROOT / ".env"
 VENV_DIR = ROOT / ".venv"
@@ -32,8 +31,25 @@ def main() -> int:
         print("Stop that app first, or start Personal Task Assistant manually on another port:")
         print("  .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8001")
         return 1
+    ensure_dependencies()
     run_doctor()
     return run_server()
+
+
+def ensure_dependencies() -> None:
+    check = subprocess.run(
+        [str(venv_python()), "-c", "import alembic, fastapi, sqlalchemy, pydantic_settings"],
+        cwd=ROOT,
+        capture_output=True,
+    )
+    if check.returncode == 0:
+        return
+    print("Installing missing dependencies into .venv (new requirements since last setup)...")
+    subprocess.run(
+        [str(venv_python()), "-m", "pip", "install", "-r", str(ROOT / "requirements.txt")],
+        cwd=ROOT,
+        check=True,
+    )
 
 
 def run_setup_and_start() -> int:

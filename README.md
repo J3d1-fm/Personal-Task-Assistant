@@ -96,11 +96,24 @@ Open `http://127.0.0.1:8000`.
 Use your own local `.env`; never commit real API keys, OAuth secrets, databases,
 or service-account files.
 
+The SQLite schema is managed with Alembic. Migrations run automatically at
+startup, including a safe upgrade path for databases created by older releases.
+
+Run lint and tests before sending changes; CI runs the same checks on GitHub:
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+pytest
+```
+
 ## Login And Auth
 
 Local Mode uses local development auth when Google OAuth is not configured and
-the app runs on `127.0.0.1`. Do not expose Local Mode through `--host 0.0.0.0`,
-LAN access, or a public tunnel unless you configure real authentication.
+the app runs on `127.0.0.1`. The app itself only auto-signs-in requests that
+arrive from the loopback interface; any other client sees the auth setup page.
+Still, do not expose Local Mode through `--host 0.0.0.0`, LAN access, or a
+public tunnel unless you configure real authentication.
 
 For hosted or shared deployments, protect the web UI with Google OAuth. Create
 OAuth credentials in Google Cloud Console and add this redirect URI:
@@ -140,15 +153,21 @@ Authorization: Bearer <key>
 Main endpoints:
 
 - `GET /readyz`
-- `GET /api/tasks`
+- `GET /api/tasks` (supports `limit` and `offset` pagination)
 - `POST /api/tasks`
 - `PATCH /api/tasks/{task_id}`
 - `DELETE /api/tasks/{task_id}`
 - `GET /api/agent/queue`
+- `GET /api/agent/queue/summary`
+- `POST /api/agent/claim`
 - `POST /api/agent/tasks`
 - `POST /api/agent/ingest/context`
 - `POST /api/ingest/context`
 - `GET /api/reminders/due`
+
+`POST /api/agent/claim` atomically hands the top-ranked Codex backlog task to
+the calling agent and moves it to `in_progress`, so several parallel agents
+never pick up the same work item.
 
 For day-to-day PM usage, see `docs/PM_GUIDE.md`. For integration examples, see
 `docs/API.md`.
@@ -167,6 +186,11 @@ The app supplies the task model, prioritization surface, DD defaults, and agent
 queue API. The user remains responsible for implementing each external adapter,
 storing its credentials safely, and deciding what data is allowed to enter the
 assistant.
+
+Adapters can pass an optional `external_id` (for example
+`telegram:<chat_id>:<message_id>:<line>`) with each task. Ingest is then
+idempotent: replayed webhooks, lost adapter state, or retried polling runs
+report the existing task as a duplicate instead of creating a second copy.
 
 ### Reference Adapter
 

@@ -60,6 +60,12 @@ curl -X POST "$TASK_TRACKER_URL/api/tasks" \
   }'
 ```
 
+A task may carry an optional `external_id` (up to 200 characters) that uniquely
+identifies it in the source system, for example
+`telegram:<chat_id>:<message_id>:<line>`. Creating a second task with the same
+`external_id` returns `409 Conflict`, and context ingest reports it as a
+duplicate instead of failing, so adapter retries stay safe.
+
 Use `/api/agent/tasks` for the same create contract when the caller is another
 agent. The endpoint records the task event with the `agent_api` note.
 
@@ -103,6 +109,10 @@ curl -X POST "$TASK_TRACKER_URL/api/ingest/context" \
 The same context-ingest contract is also available at
 `POST /api/agent/ingest/context` for external agent clients.
 
+The response contains `created` (new tasks) and `duplicates` (existing tasks
+matched by `external_id`). Sending the same batch twice creates nothing on the
+second call and returns the original tasks in `duplicates`.
+
 ## Read Agent Queue
 
 Use the agent queue endpoint when another agent needs the next execution list
@@ -137,6 +147,34 @@ Response shape:
   },
   "tasks": []
 }
+```
+
+`GET /api/tasks` additionally supports `limit` (1-500) and `offset` for paging
+through large boards.
+
+## Poll the Queue Cheaply
+
+`GET /api/agent/queue/summary` returns only the summary block above. Use it for
+frequent polling loops; it reads only active tasks and skips the task list and
+sorting entirely:
+
+```bash
+curl "$TASK_TRACKER_URL/api/agent/queue/summary" \
+  -H "Authorization: Bearer $TASK_TRACKER_API_KEY"
+```
+
+## Claim the Next Task
+
+`POST /api/agent/claim` atomically assigns the top-ranked claimable task to the
+calling agent: it picks the best `assignee=codex`, `status=backlog` task by
+smart rank, transitions it to `in_progress`, and returns it. The transition is
+conditional in the store (SQL conditional update, Firestore transaction), so
+two agents claiming concurrently always receive different tasks. When nothing
+is claimable the endpoint returns `404`.
+
+```bash
+curl -X POST "$TASK_TRACKER_URL/api/agent/claim" \
+  -H "Authorization: Bearer $TASK_TRACKER_API_KEY"
 ```
 
 ## Update Status or Assignment

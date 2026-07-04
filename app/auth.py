@@ -1,10 +1,20 @@
+import secrets
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import get_settings
 
-
 bearer = HTTPBearer(auto_error=False)
+
+# "testclient" is the fixed client host Starlette's in-process TestClient reports;
+# it can never appear on a real network socket.
+LOOPBACK_CLIENT_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+def is_loopback_request(request: Request) -> bool:
+    client = request.client
+    return client is not None and client.host in LOOPBACK_CLIENT_HOSTS
 
 
 def has_valid_api_key(
@@ -17,7 +27,9 @@ def has_valid_api_key(
         supplied = credentials.credentials
     if supplied is None:
         supplied = request.headers.get("x-api-key")
-    return bool(supplied and supplied == settings.task_tracker_api_key)
+    if not supplied or not settings.task_tracker_api_key:
+        return False
+    return secrets.compare_digest(supplied, settings.task_tracker_api_key)
 
 
 def current_user(request: Request) -> dict[str, str] | None:

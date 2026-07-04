@@ -2,13 +2,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
 from google.cloud import firestore
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Task, TaskStatus, utc_now
 from app.schemas import TaskCreate, TaskRead, TaskUpdate
-
 
 DEFAULT_DUE_DAYS_BY_PRIORITY = {
     1: 1,
@@ -19,8 +19,17 @@ DEFAULT_DUE_DAYS_BY_PRIORITY = {
 }
 
 
+class DuplicateExternalIdError(Exception):
+    def __init__(self, external_id: str):
+        super().__init__(f"Task with external_id {external_id!r} already exists")
+        self.external_id = external_id
+
+
 class TaskStore(Protocol):
     def get_task(self, task_id: int) -> TaskRead | None:
+        ...
+
+    def get_task_by_external_id(self, external_id: str) -> TaskRead | None:
         ...
 
     def list_tasks(
@@ -36,6 +45,9 @@ class TaskStore(Protocol):
         ...
 
     def update_task(self, task_id: int, payload: TaskUpdate) -> TaskRead | None:
+        ...
+
+    def try_claim(self, task_id: int) -> TaskRead | None:
         ...
 
     def delete_task(self, task_id: int) -> bool:
@@ -67,6 +79,12 @@ class SqliteTaskStore:
             return None
         return task_to_read(task)
 
+    def get_task_by_external_id(self, external_id: str) -> TaskRead | None:
+        task = self.db.scalars(select(Task).where(Task.external_id == external_id)).first()
+        if task is None:
+            return None
+        return task_to_read(task)
+
     def list_tasks(
         self,
         *,
@@ -87,7 +105,13 @@ class SqliteTaskStore:
         payload = apply_create_defaults(payload)
         task = Task(**payload.model_dump())
         self.db.add(task)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            if payload.external_id and self.get_task_by_external_id(payload.external_id) is not None:
+                raise DuplicateExternalIdError(payload.external_id) from None
+            raise
         self.db.refresh(task)
         return task_to_read(task)
 
@@ -105,6 +129,18 @@ class SqliteTaskStore:
         self.db.commit()
         self.db.refresh(task)
         return task_to_read(task)
+
+    def try_claim(self, task_id: int) -> TaskRead | None:
+        result = self.db.execute(
+            update(Task)
+            .where(Task.id == task_id, Task.status == TaskStatus.backlog)
+            .values(status=TaskStatus.in_progress, updated_at=utc_now())
+        )
+        if result.rowcount != 1:
+            self.db.rollback()
+            return None
+        self.db.commit()
+        return self.get_task(task_id)
 
     def delete_task(self, task_id: int) -> bool:
         task = self.db.get(Task, task_id)
@@ -147,6 +183,12 @@ class FirestoreTaskStore:
             return None
         return self._doc_to_task(snapshot)
 
+    def get_task_by_external_id(self, external_id: str) -> TaskRead | None:
+        snapshots = list(self.collection.where("external_id", "==", external_id).limit(1).stream())
+        if not snapshots:
+            return None
+        return self._doc_to_task(snapshots[0])
+
     def list_tasks(
         self,
         *,
@@ -157,6 +199,9 @@ class FirestoreTaskStore:
         query = self.collection
         if status is not None:
             query = query.where("status", "==", status.value)
+        elif not include_done:
+            # Server-side filter so agent polling never reads the done/cancelled backlog.
+            query = query.where("status", "not-in", [TaskStatus.done.value, TaskStatus.cancelled.value])
         if assignee:
             query = query.where("assignee", "==", assignee)
         tasks = [self._doc_to_task(snapshot) for snapshot in query.stream()]
@@ -173,6 +218,8 @@ class FirestoreTaskStore:
 
     def create_task(self, payload: TaskCreate) -> TaskRead:
         now = utc_now()
+        if payload.external_id and self.get_task_by_external_id(payload.external_id) is not None:
+            raise DuplicateExternalIdError(payload.external_id)
         task_id = self._next_id()
         payload = apply_create_defaults(payload, now=now)
         data = payload.model_dump()
@@ -207,6 +254,24 @@ class FirestoreTaskStore:
         if not refreshed.exists:
             return None
         return self._doc_to_task(refreshed)
+
+    def try_claim(self, task_id: int) -> TaskRead | None:
+        ref = self.collection.document(str(task_id))
+
+        @firestore.transactional
+        def claim(transaction: firestore.Transaction) -> TaskRead | None:
+            snapshot = ref.get(transaction=transaction)
+            if not snapshot.exists:
+                return None
+            data = snapshot.to_dict() or {}
+            if data.get("status") != TaskStatus.backlog.value:
+                return None
+            now = utc_now()
+            transaction.update(ref, {"status": TaskStatus.in_progress.value, "updated_at": now})
+            data.update({"status": TaskStatus.in_progress.value, "updated_at": now})
+            return TaskRead.model_validate(data)
+
+        return claim(self.client.transaction())
 
     def delete_task(self, task_id: int) -> bool:
         ref = self.collection.document(str(task_id))

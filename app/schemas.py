@@ -15,6 +15,7 @@ class TaskBase(BaseModel):
     source_name: str | None = Field(default=None, max_length=160)
     source_url: str | None = None
     source_context: str | None = None
+    external_id: str | None = Field(default=None, min_length=1, max_length=200)
     due_at: datetime | None = None
     reminder_at: datetime | None = None
 
@@ -33,6 +34,7 @@ class TaskUpdate(BaseModel):
     source_name: str | None = Field(default=None, max_length=160)
     source_url: str | None = None
     source_context: str | None = None
+    external_id: str | None = Field(default=None, min_length=1, max_length=200)
     due_at: datetime | None = None
     reminder_at: datetime | None = None
     reminder_last_sent_at: datetime | None = None
@@ -58,6 +60,7 @@ class ContextIngest(BaseModel):
 
 class ContextIngestResult(BaseModel):
     created: list[TaskRead]
+    duplicates: list[TaskRead] = Field(default_factory=list)
 
 
 class AgentQueueSummary(BaseModel):
