@@ -1,5 +1,35 @@
 Personal Task Assistant Changelog
 
+Version 0.5.1 - 2026-07-04
+
+Agent evaluation process:
+- Added `evals/` with a repeatable evaluation process for the MCP server,
+  measuring whether an agent can operate the task board given ONLY the MCP
+  tools (no code access, no docs) — the quality bar for an autonomous
+  assistant, not just a tool wrapper.
+- `evals/seed_eval_board.py` recreates a deterministic 16-task board with
+  fixed June-2026 timestamps and all deadlines in the past, so every answer
+  stays stable no matter when the evaluation runs; re-seeding always produces
+  the identical board.
+- `evals/evaluation.xml` holds 10 read-only questions built to the MCP
+  evaluation guidelines: independent, non-destructive, stable, multi-step,
+  not solvable by keyword search, each with a single string-comparable answer
+  (titles, counts, dates, priorities, an origin, an external id, True/False).
+- `evals/verify_answers.py` is the free ground-truth check: it connects to
+  the real MCP server over stdio exactly like Claude Code would, solves all
+  10 questions programmatically through read-only tools, compares against
+  evaluation.xml, and with --write-loop also exercises the claim ->
+  in_progress -> finish -> waiting_review cycle end to end.
+- Vendored the Anthropic mcp-builder LLM evaluation harness
+  (`evals/evaluation.py`, `evals/connections.py`, Apache 2.0) which gives
+  Claude the questions plus only the MCP server and reports accuracy,
+  tool-call traces, and the agent's feedback on the tools; documented the
+  full process in `evals/README.md` and linked it from README.md.
+- Verified live against a served eval board: all 10 answers matched through
+  the real stdio client, and the write loop claimed and finished the
+  top-ranked task correctly (10/10, claim/finish OK).
+- Bumped the app version from 0.5.0 to 0.5.1.
+
 Version 0.5.0 - 2026-07-04
 
 MCP server:

@@ -107,6 +107,11 @@ ruff check .
 pytest
 ```
 
+After changing the MCP tool surface, also run the agent evaluation process in
+`evals/` — a deterministic ground-truth check plus an optional LLM run that
+measures whether an agent can operate the board through the MCP tools alone.
+See `evals/README.md`.
+
 ## Login And Auth
 
 Local Mode uses local development auth when Google OAuth is not configured and

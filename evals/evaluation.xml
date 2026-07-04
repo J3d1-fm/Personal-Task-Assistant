@@ -1,0 +1,42 @@
+<evaluation>
+   <qa_pair>
+      <question>Which task on this board was finished most recently? Answer with its exact title.</question>
+      <answer>Collect retention metrics for seed deck</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>How many active tasks currently require human attention, meaning they are owned by the human or sitting in review or blocked? Answer with a single number.</question>
+      <answer>6</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>A small household errand was captured into the board from a chat app. What is its deduplication identifier? Answer with the exact identifier string.</question>
+      <answer>telegram:-100500:52:0</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Without claiming anything: if an agent asked for its next work item right now, which agent-owned backlog task ranks first in the smart-sorted queue? Answer with its exact title.</question>
+      <answer>Refactor task ranking tests</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>How many tasks were completed during the week of 2026-06-09 through 2026-06-15 inclusive (UTC)? Answer with a single number.</question>
+      <answer>3</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Among the tasks that are currently stuck waiting on someone else, which one has the earliest deadline? Answer with that deadline date as YYYY-MM-DD.</question>
+      <answer>2026-06-21</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Consider the active task that has been waiting the longest since it was created. What is its priority? Answer with a single digit 1-5.</question>
+      <answer>3</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Which source origin contributed the most active (not finished, not cancelled) tasks to the board? Answer with the origin value in lowercase.</question>
+      <answer>email</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Exactly one active task carries an explicit reminder timestamp in addition to its deadline. What is that task's priority? Answer with a single digit 1-5.</question>
+      <answer>1</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>The task about preparing answers to investor questions was created earlier than the task about approving the final deck design. True or False?</question>
+      <answer>False</answer>
+   </qa_pair>
+</evaluation>
