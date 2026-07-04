@@ -1,5 +1,40 @@
 Personal Task Assistant Changelog
 
+Version 0.5.0 - 2026-07-04
+
+MCP server:
+- Added an MCP (Model Context Protocol) server at `adapters/task_assistant_mcp.py`
+  that exposes the JSON API as tools over stdio, so Claude Code, Claude Desktop,
+  and any other MCP client can operate the tracker without custom adapter code.
+- Nine tools with validated inputs, per-tool read-only/destructive annotations,
+  and markdown or JSON output: `task_assistant_get_queue`,
+  `task_assistant_queue_summary`, `task_assistant_claim_task`,
+  `task_assistant_finish_task`, `task_assistant_create_task`,
+  `task_assistant_update_task`, `task_assistant_list_tasks`,
+  `task_assistant_ingest_context`, and `task_assistant_due_reminders`.
+- The tool set encodes the product workflow: `claim_task` atomically takes the
+  top-ranked Codex backlog task, `finish_task` hands completed work back as
+  `waiting_review`, so a human always reviews agent output before closing.
+- Error messages are actionable for agents: missing or wrong API key, tracker
+  not running, unknown task id, duplicate `external_id`, and validation
+  failures each explain the next step instead of dumping stack traces.
+- Configuration mirrors the other adapters: `TASK_TRACKER_URL` (defaults to
+  the Local Mode URL) and `TASK_TRACKER_API_KEY`; the server is a pure API
+  client and never touches the database directly.
+- Added `docs/MCP.md` with the tool table and registration instructions for
+  Claude Code (`claude mcp add`) and Claude Desktop, plus safety notes; linked
+  the server from README.md and adapters/README.md.
+- Added nine integration tests that run every MCP tool against the real
+  FastAPI app in-process (create/list, claim/finish loop, queue metrics,
+  ingest deduplication, update validation, reminder listing, actionable
+  errors), bringing the suite to 50 tests.
+
+Dependency refresh (required by the MCP SDK):
+- Upgraded FastAPI 0.115.6 -> 0.139.0, Uvicorn 0.34.0 -> 0.50.0, and
+  Pydantic 2.10.4 -> 2.13.4; pinned `mcp` 1.28.1. The full test suite passes
+  on the upgraded stack.
+- Bumped the app version from 0.4.0 to 0.5.0.
+
 Version 0.4.0 - 2026-07-04
 
 Agent coordination:

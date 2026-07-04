@@ -192,6 +192,17 @@ Adapters can pass an optional `external_id` (for example
 idempotent: replayed webhooks, lost adapter state, or retried polling runs
 report the existing task as a duplicate instead of creating a second copy.
 
+### MCP Server
+
+The repository includes an MCP server in `adapters/task_assistant_mcp.py` that
+exposes the JSON API as Model Context Protocol tools. Claude Code, Claude
+Desktop, and any other MCP client can read the queue, atomically claim work,
+create and update tasks, and ingest context — no custom adapter code needed.
+The tool set mirrors the product workflow: `claim_task` -> do the work ->
+`finish_task` (waiting review), so the human stays in the loop.
+
+Setup and the full tool list: `docs/MCP.md`.
+
 ### Reference Adapter
 
 The repository includes a Telegram polling adapter in

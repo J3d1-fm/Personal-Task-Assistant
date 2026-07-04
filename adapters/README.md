@@ -3,10 +3,13 @@
 Adapters connect external sources to Personal Task Assistant through the JSON
 API. They should stay small, auditable, and user-controlled.
 
-The repository includes one reference adapter:
+The repository includes two connectors:
 
 - `telegram_polling_adapter.py` reads Telegram Bot API updates and sends
   normalized tasks to `POST /api/agent/ingest/context`.
+- `task_assistant_mcp.py` exposes the JSON API as an MCP server so Claude Code,
+  Claude Desktop, and other MCP clients can read the queue, claim work, and
+  ingest context directly. See `docs/MCP.md`.
 
 ## Safety Rules
 
