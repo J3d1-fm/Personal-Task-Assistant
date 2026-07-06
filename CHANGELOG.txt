@@ -1,5 +1,31 @@
 Personal Task Assistant Changelog
 
+Version 0.5.2 - 2026-07-04
+
+Agent playbooks (skills):
+- Added four skill playbooks in `.claude/skills/`, distilled from the 0.4.0 ->
+  0.5.1 development sessions, so future coding agents (Claude Code, Codex, or
+  other) repeat the working process instead of rediscovering it:
+  `task-board-worker` (operate the board as the autonomous worker: claim ->
+  work -> finish-to-review, ingest with external_id discipline, never
+  self-close tasks), `ship-release` (lint/tests, version bump, house-style
+  changelog, docs sync, CI verification), `db-schema-change` (Alembic-only
+  revisions, the legacy-database stamping heuristic and its marker column,
+  dual-store updates, migration tests), and `mcp-tool-change` (tool
+  conventions, integration tests via the in-process app, and the mandatory
+  evals/ gate before shipping surface changes).
+- Added `AGENTS.md` as the repository operating contract for any coding
+  agent: what the project is, ground rules (green ruff+pytest before commit,
+  Alembic-only schema changes, version+changelog discipline, no credentials),
+  a task-to-skill routing table, and a repo map. Claude Code discovers the
+  skills automatically; other agents are routed to the same SKILL.md files.
+- Added `CLAUDE.md` delegating Claude Code sessions to AGENTS.md.
+- Validated the playbooks mechanically: every file path and code symbol the
+  skills reference (HEAD_REVISION, EXPECTED_TOOL_COUNT, EXPECTED_TOOLS,
+  LEGACY_TASKS_TABLE, render_as_batch, encode_task_data) exists in the
+  repository, and skill names match their directories.
+- Bumped the app version from 0.5.1 to 0.5.2.
+
 Version 0.5.1 - 2026-07-04
 
 Agent evaluation process:
