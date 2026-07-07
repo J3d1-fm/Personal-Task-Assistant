@@ -112,6 +112,16 @@ After changing the MCP tool surface, also run the agent evaluation process in
 measures whether an agent can operate the board through the MCP tools alone.
 See `evals/README.md`.
 
+## Daily Automation
+
+`automation/` runs a once-a-day ritual (15:00 local via launchd) that checks
+the board and moves work forward without you starting it. It always writes a
+prioritized digest (overdue, waiting-your-review, blocked, unassigned, agent
+queue); with an opt-in agent work loop enabled, an agent also claims codex
+tasks and finishes them to `waiting_review` for your approval. Install with
+`automation/install.sh`; full details and the safety model are in
+`automation/README.md`.
+
 ## Login And Auth
 
 Local Mode uses local development auth when Google OAuth is not configured and

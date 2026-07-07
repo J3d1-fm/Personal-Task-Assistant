@@ -20,6 +20,7 @@ matching `SKILL.md` manually. Match by task:
 | You are about to... | Read first |
 | --- | --- |
 | Work tasks from the board as the agent (claim/finish/ingest) | `.claude/skills/task-board-worker/SKILL.md` |
+| The daily scheduled run / digest / automation/ | `.claude/skills/daily-task-ritual/SKILL.md` |
 | Commit/ship ANY change (version, changelog, CI) | `.claude/skills/ship-release/SKILL.md` |
 | Touch the DB schema, models, or migrations | `.claude/skills/db-schema-change/SKILL.md` |
 | Touch the MCP tools or their descriptions | `.claude/skills/mcp-tool-change/SKILL.md` |
@@ -50,4 +51,7 @@ matching `SKILL.md` manually. Match by task:
 - `tests/` — pytest suite; MCP tools are tested against the in-process app.
 - `evals/` — agent evaluation process for the MCP server (seeded board,
   questions, deterministic verifier, LLM harness). See `evals/README.md`.
+- `automation/` — the once-a-day ritual: health check + digest (deterministic)
+  and an opt-in agent work loop, scheduled via launchd. See
+  `automation/README.md`.
 - `docs/` — API, MCP, install, PM guide; `CHANGELOG.txt` is the release log.

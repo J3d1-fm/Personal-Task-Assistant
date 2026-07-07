@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd job that runs the daily task ritual at 15:00 local time.
+  __REPO__ is replaced with the absolute repository path by install.sh.
+  Do not load this directly; run automation/install.sh.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.taskassistant.daily</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__REPO__/automation/daily_run.sh</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>15</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>__REPO__/automation/logs/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__REPO__/automation/logs/launchd.err.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO__</string>
+</dict>
+</plist>

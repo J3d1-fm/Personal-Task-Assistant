@@ -12,6 +12,8 @@ __pycache__/
 .DS_Store
 .codex/
 .adapter_state/
+automation/logs/*
+!automation/logs/.gitkeep
 source.tar
 docs/DAILY_INBOX_TASK_IMPORT_TECH.txt
 credentials*.json

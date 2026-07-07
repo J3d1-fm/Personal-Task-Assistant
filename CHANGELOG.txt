@@ -1,5 +1,48 @@
 Personal Task Assistant Changelog
 
+Version 0.6.0 - 2026-07-07
+
+Daily automation:
+- Added `automation/` — a once-a-day ritual that checks the board and takes
+  work forward without the human starting it, scheduled via launchd at 15:00
+  local time. This is the "second worker shows up for its shift" layer on top
+  of the queue and MCP tools built in 0.4.0-0.5.x.
+- Two deliberately separated layers with the safety split enforced in code,
+  not the prompt:
+  * `daily_ritual.py` (deterministic, always runs, never mutates the board):
+    health-checks the tracker, reads it over REST, classifies the board with a
+    pure `build_situation` function, and writes a dated digest to
+    `automation/logs/` ordered by what needs the human first — overdue,
+    waiting-your-review, blocked, unassigned-to-triage, due-soon, then the
+    agent queue. The human always gets a report even if the agent layer is off
+    or fails.
+  * `work_loop.py` (opt-in, only with DAILY_RITUAL_WORK=1 and an
+    ANTHROPIC_API_KEY): gives a model ONLY the task_assistant_* MCP tools and
+    the worker instructions, then it claims -> acts -> finishes tasks to
+    waiting_review; what it did is folded back into the digest.
+- Safety rails live in `work_loop._dispatch`, not just the prompt: the agent
+  has no shell/repo/web access (only MCP tools), it is refused when it tries to
+  set a task to `done` (only the human closes tasks; its terminal state is
+  waiting_review), and `--max-tasks` caps claims per run so an unattended run
+  cannot run away. These rails are unit-tested without any API key
+  (`tests/test_work_loop.py`).
+- `daily_run.sh` is the scheduler entrypoint: it reuses a running tracker or
+  starts a temporary one for the duration and stops it after, loads config
+  from `.env`, and logs each run. `install.sh` renders and loads the launchd
+  job (run by the user on purpose, since it schedules an agent that acts on
+  their behalf; never auto-loaded). `com.taskassistant.daily.plist` fires at
+  15:00 local.
+- Added `tests/test_daily_ritual.py` (board classification and digest
+  rendering: bucketing, overdue-vs-due-soon, reminder-driven overdue, worked
+  reporting) and `tests/test_work_loop.py` (the claim budget and the
+  done-refusal, verified without an LLM), bringing the suite to 61 tests.
+- Verified end to end against a served board: the digest renders every section
+  correctly, and `daily_run.sh` starts a temporary tracker, produces the
+  digest, and stops the tracker afterward.
+- Added the `daily-task-ritual` skill playbook and `automation/README.md`;
+  routed both from AGENTS.md and README.md.
+- Bumped the app version from 0.5.2 to 0.6.0.
+
 Version 0.5.2 - 2026-07-07
 
 Agent playbooks (skills):
