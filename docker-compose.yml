@@ -1,0 +1,54 @@
+# Standalone deployment: your own task board + the daily agent ritual.
+#
+#   cp .env.example .env    # set TASK_TRACKER_API_KEY and SESSION_SECRET_KEY
+#   docker compose up -d
+#
+# The web UI in Docker requires Google OAuth (local dev auto-login is
+# loopback-only by design and container traffic is not loopback). The agent
+# stack — JSON API, MCP server, daily ritual — works with just the API key.
+# See docs/SELF_HOSTING.md.
+
+services:
+  tracker:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8080"
+    environment:
+      TASK_STORE: sqlite
+      DATABASE_URL: sqlite:////data/task_tracker.db
+      TASK_TRACKER_API_KEY: ${TASK_TRACKER_API_KEY:?set it in .env}
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?set it in .env}
+      SESSION_COOKIE_HTTPS: ${SESSION_COOKIE_HTTPS:-false}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      ALLOWED_GOOGLE_EMAILS: ${ALLOWED_GOOGLE_EMAILS:-}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - tracker-data:/data
+
+  ritual:
+    build: .
+    restart: unless-stopped
+    command: ["python", "automation/scheduler.py"]
+    depends_on:
+      tracker:
+        condition: service_healthy
+    environment:
+      TASK_TRACKER_URL: http://tracker:8080
+      TASK_TRACKER_API_KEY: ${TASK_TRACKER_API_KEY:?set it in .env}
+      RITUAL_TIME: ${RITUAL_TIME:-15:00}
+      RITUAL_ARGS: ${RITUAL_ARGS:-}
+      DAILY_RITUAL_WORK: ${DAILY_RITUAL_WORK:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DAILY_RITUAL_MODEL: ${DAILY_RITUAL_MODEL:-claude-opus-4-8}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ritual-logs:/app/automation/logs
+    healthcheck:
+      disable: true
+
+volumes:
+  tracker-data:
+  ritual-logs:

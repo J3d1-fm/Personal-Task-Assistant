@@ -52,6 +52,9 @@ matching `SKILL.md` manually. Match by task:
 - `evals/` — agent evaluation process for the MCP server (seeded board,
   questions, deterministic verifier, LLM harness). See `evals/README.md`.
 - `automation/` — the once-a-day ritual: health check + digest (deterministic)
-  and an opt-in agent work loop, scheduled via launchd. See
-  `automation/README.md`.
+  and an opt-in agent work loop; scheduled via launchd/systemd/cron natively
+  or `automation/scheduler.py` in Docker. See `automation/README.md`.
+- `docker-compose.yml` + `docs/SELF_HOSTING.md` — the standalone deployment
+  (tracker + daily ritual as services); releases are tagged `vX.Y.Z` and
+  published by `.github/workflows/release.yml` from CHANGELOG.txt.
 - `docs/` — API, MCP, install, PM guide; `CHANGELOG.txt` is the release log.

@@ -53,7 +53,8 @@ That is the product's public history and what Local Mode users read after
    (see `git log --oneline` for the established pattern), then bullet details.
 
 6. **Push and verify CI** — after pushing to `main`, confirm the GitHub
-   Actions run is green:
+   Actions run is green (it lints, tests, builds the Docker image, and smoke
+   tests it):
 
    ```bash
    git push origin main
@@ -62,6 +63,16 @@ That is the product's public history and what Local Mode users read after
 
    If CI fails, fixing it is part of the same release — do not leave `main`
    red.
+
+7. **Tag the release** — once CI is green, tag so the Release workflow
+   publishes a GitHub Release with notes extracted from CHANGELOG.txt
+   (`scripts/release_notes.py`; a tag without a matching changelog section
+   fails loudly):
+
+   ```bash
+   git tag vX.Y.Z && git push origin vX.Y.Z
+   gh run list --workflow Release --limit 1
+   ```
 
 ## Extra gates for specific surfaces
 

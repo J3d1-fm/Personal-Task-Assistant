@@ -56,6 +56,25 @@ The project is intentionally small and inspectable: the UI is the operating
 surface, the API is the agent contract, and adapters connect existing tools
 without forcing users to move every workflow into one vendor ecosystem.
 
+## Deploy It Yourself
+
+The whole feature — your own board plus the daily AI worker — is a standalone
+self-hostable unit:
+
+```bash
+git clone https://github.com/J3d1-fm/Personal-Task-Assistant.git
+cd Personal-Task-Assistant
+cp .env.example .env   # set TASK_TRACKER_API_KEY and SESSION_SECRET_KEY
+docker compose up -d
+```
+
+That starts the tracker (with automatic schema migrations) and the daily
+ritual: a prioritized digest of your board every day at `RITUAL_TIME`, and —
+opt-in — an agent that works your queue and hands results back for review.
+No Docker? Native macOS (launchd) and Linux (systemd/cron) schedules install
+with `automation/install.sh`. Full guide, including the safety model of the
+unattended agent: `docs/SELF_HOSTING.md`.
+
 ## Install For Non-Technical Users
 
 The fastest path is to give this repository link to an AI coding agent and ask

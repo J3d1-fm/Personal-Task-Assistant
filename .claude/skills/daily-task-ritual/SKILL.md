@@ -24,11 +24,18 @@ split, both in `automation/`:
 
 ## Wiring
 
-`launchd` (`automation/com.taskassistant.daily.plist`, 15:00 local) ->
-`automation/daily_run.sh` -> `automation/daily_ritual.py`. The runner reuses a
+Native: `automation/install.sh` installs the scheduler for the current OS —
+launchd on macOS (`automation/com.taskassistant.daily.plist`, 15:00 local),
+a systemd user timer or crontab entry on Linux. All of them run
+`automation/daily_run.sh` -> `automation/daily_ritual.py`; the runner reuses a
 running tracker or starts a temporary one for the duration and stops it after.
-Install with `automation/install.sh` (the user runs this — it schedules an
-agent that acts on their behalf, so it is never auto-loaded).
+The user runs install.sh themselves — it schedules an agent that acts on their
+behalf, so it is never auto-loaded.
+
+Docker: the `ritual` service in `docker-compose.yml` runs
+`automation/scheduler.py`, which sleeps until `RITUAL_TIME` (env, local to
+`TZ`) daily and executes the same daily_ritual.py against the `tracker`
+service. Self-hosting guide: `docs/SELF_HOSTING.md`.
 
 ## Safety model (enforced in code, not the prompt)
 

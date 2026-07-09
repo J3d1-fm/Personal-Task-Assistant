@@ -1,5 +1,46 @@
 Personal Task Assistant Changelog
 
+Version 0.7.0 - 2026-07-08
+
+Standalone packaging:
+- The whole feature — your own board plus the daily AI worker — is now a
+  self-hostable unit: `cp .env.example .env && docker compose up -d` starts
+  the tracker (SQLite in a named volume, schema migrated on start) and the
+  `ritual` service, which schedules itself and needs no launchd/cron.
+- Added `automation/scheduler.py`, the in-container daily scheduler: sleeps
+  until RITUAL_TIME (HH:MM, local to $TZ) each day and runs daily_ritual.py
+  as a subprocess; a failed run is logged and does not kill the schedule.
+- Made `automation/install.sh` cross-platform for native deployments: launchd
+  on macOS (as before), a systemd user timer on Linux, and a crontab entry as
+  the fallback — same --remove/--dry-run interface everywhere.
+- Docker image now carries the full worker stack (adapters/, automation/,
+  evals/), creates /data for the SQLite volume with correct non-root
+  ownership, and defines a /readyz HEALTHCHECK that compose uses to gate the
+  ritual service on tracker readiness.
+- Added `anthropic==0.116.0` to requirements so the opt-in agent work loop is
+  fully functional in the packaged image, not just on dev machines.
+- Documented the whole story in `docs/SELF_HOSTING.md`: the three deployment
+  shapes (Docker / native macOS / native Linux), connecting MCP clients to a
+  containerized board, upgrade path, and the honest web-UI note — local-dev
+  auto-login is loopback-only by design, so the UI in Docker requires Google
+  OAuth while the agent stack (API, MCP, ritual) needs only the API key.
+- Extended `.env.example` with the automation settings (RITUAL_TIME,
+  DAILY_RITUAL_WORK, ANTHROPIC_API_KEY, DAILY_RITUAL_MODEL).
+
+Releases as distribution:
+- Added `.github/workflows/release.yml`: pushing a `vX.Y.Z` tag publishes a
+  GitHub Release with notes extracted from the matching CHANGELOG.txt section
+  by `scripts/release_notes.py`; a tag without a changelog entry fails loudly.
+- CI now also validates docker-compose.yml, builds the Docker image, and
+  smoke-tests it (boot, /readyz, create a task, claim it through the API).
+- Added tests for the packaging helpers (scheduler time math, release-notes
+  extraction, and a guard that CHANGELOG.txt always has a section for the
+  current app version), bringing the suite to 67 tests.
+- Updated README ("Deploy It Yourself"), automation/README.md, AGENTS.md, and
+  the ship-release / daily-task-ritual skills (release tagging step, Docker
+  wiring).
+- Bumped the app version from 0.6.0 to 0.7.0.
+
 Version 0.6.0 - 2026-07-07
 
 Daily automation:

@@ -1,7 +1,10 @@
 # Daily task ritual
 
 Runs once a day (15:00 local by default) to check the board and move work
-forward without you starting it. Two layers:
+forward without you starting it. Deploy shapes: launchd on macOS, systemd/cron
+on Linux (both via `install.sh`), or the self-scheduling `ritual` service in
+`docker-compose.yml` (`scheduler.py`, time set by `RITUAL_TIME`) — see
+`docs/SELF_HOSTING.md` for the standalone deployment. Two layers:
 
 - **Digest (always):** `daily_ritual.py` reads the board and writes
   `logs/digest-<date>.md` — overdue, waiting-your-review, blocked,
@@ -74,8 +77,9 @@ set -a; . .env; set +a
 | `daily_ritual.py` | Deterministic driver: health check, situation, digest |
 | `work_loop.py` | Opt-in agent loop over MCP with the safety rails |
 | `daily_run.sh` | Scheduler entrypoint: tracker lifecycle + logging |
-| `com.taskassistant.daily.plist` | launchd job (15:00 local) |
-| `install.sh` | Render/load/remove the job |
+| `scheduler.py` | In-container daily scheduler (docker-compose `ritual` service) |
+| `com.taskassistant.daily.plist` | launchd job (15:00 local, macOS) |
+| `install.sh` | Install/remove the schedule: launchd, systemd user timer, or cron |
 | `logs/` | Dated digests and run logs (gitignored) |
 
 ## Change the time

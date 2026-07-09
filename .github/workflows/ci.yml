@@ -20,3 +20,33 @@ jobs:
         run: ruff check .
       - name: Test
         run: pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose file
+        run: |
+          TASK_TRACKER_API_KEY=ci-key SESSION_SECRET_KEY=ci-secret-0123456789012345678901234567890 \
+            docker compose config -q
+      - name: Build image
+        run: docker build -t task-assistant:ci .
+      - name: Smoke test the image
+        run: |
+          docker run -d --name tracker \
+            -e TASK_TRACKER_API_KEY=ci-key \
+            -e SESSION_SECRET_KEY=ci-secret-0123456789012345678901234567890 \
+            -e DATABASE_URL=sqlite:////data/task_tracker.db \
+            -p 127.0.0.1:8080:8080 task-assistant:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8080/readyz && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8080/readyz
+          curl -fsS -X POST http://127.0.0.1:8080/api/tasks \
+            -H "Authorization: Bearer ci-key" -H "Content-Type: application/json" \
+            -d '{"title":"ci smoke task","assignee":"codex","priority":1}'
+          curl -fsS -X POST http://127.0.0.1:8080/api/agent/claim \
+            -H "Authorization: Bearer ci-key" | grep '"in_progress"'
+          docker logs tracker | tail -5
+          docker rm -f tracker
