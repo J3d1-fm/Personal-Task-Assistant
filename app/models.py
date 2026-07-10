@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from enum import StrEnum
 
-from sqlalchemy import DateTime, Enum, Integer, String, Text
+from sqlalchemy import DateTime, Enum, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -35,6 +35,31 @@ class TaskOrigin(StrEnum):
     other = "other"
 
 
+class SourceHealthStatus(StrEnum):
+    healthy = "healthy"
+    degraded = "degraded"
+    unavailable = "unavailable"
+    reauth_required = "reauth_required"
+    misconfigured = "misconfigured"
+    rate_limited = "rate_limited"
+    failed = "failed"
+
+
+class IngestionDecisionType(StrEnum):
+    created = "created"
+    duplicate = "duplicate"
+    ignored = "ignored"
+    needs_review = "needs_review"
+    failed = "failed"
+
+
+class IngestionDecisionActor(StrEnum):
+    adapter = "adapter"
+    agent = "agent"
+    human = "human"
+    system = "system"
+
+
 class Task(Base):
     __tablename__ = "tasks"
 
@@ -60,6 +85,60 @@ class Task(Base):
     reminder_last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class SourceState(Base):
+    __tablename__ = "source_states"
+
+    source_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    source_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    adapter_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    status: Mapped[SourceHealthStatus] = mapped_column(
+        Enum(SourceHealthStatus), default=SourceHealthStatus.healthy, nullable=False, index=True
+    )
+    last_checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    action_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    items_checked: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    candidates: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    duplicates: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    ignored: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    suppressed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class IngestionDecision(Base):
+    __tablename__ = "ingestion_decisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_id",
+            "source_item_id",
+            "content_fingerprint",
+            name="uq_ingestion_decision_item_fingerprint",
+        ),
+        Index("ix_ingestion_decisions_source_item", "source_id", "source_item_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    source_id: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    source_item_id: Mapped[str] = mapped_column(String(300), nullable=False)
+    content_fingerprint: Mapped[str] = mapped_column(String(200), nullable=False)
+    decision: Mapped[IngestionDecisionType] = mapped_column(Enum(IngestionDecisionType), nullable=False, index=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    task_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    decided_by: Mapped[IngestionDecisionActor] = mapped_column(Enum(IngestionDecisionActor), nullable=False)
+    revisit_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )

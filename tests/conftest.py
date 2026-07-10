@@ -36,6 +36,8 @@ def client():
 @pytest.fixture(autouse=True)
 def clean_tasks(client):
     with engine.begin() as connection:
+        connection.execute(text("DELETE FROM ingestion_decisions"))
+        connection.execute(text("DELETE FROM source_states"))
         connection.execute(text("DELETE FROM tasks"))
     yield
 

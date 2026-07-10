@@ -14,6 +14,7 @@ from app.auth import current_user, is_allowed_email, is_loopback_request, requir
 from app.config import get_settings
 from app.db import get_db
 from app.history import choose_update_action, record_task_event
+from app.ingestion_store import decision_should_process, get_ingestion_store
 from app.migrate import run_migrations
 from app.models import TaskAssignee, TaskStatus
 from app.schemas import (
@@ -21,6 +22,13 @@ from app.schemas import (
     AgentQueueSummary,
     ContextIngest,
     ContextIngestResult,
+    IngestionCheckRequest,
+    IngestionCheckResult,
+    IngestionCheckResultItem,
+    IngestionDecisionRead,
+    IngestionDecisionWrite,
+    SourceReport,
+    SourceStateRead,
     TaskCreate,
     TaskRead,
     TaskUpdate,
@@ -202,7 +210,10 @@ def update_task(
 ) -> TaskRead:
     store = get_task_store(db)
     previous = store.get_task(task_id)
-    task = store.update_task(task_id, payload)
+    try:
+        task = store.update_task(task_id, payload)
+    except DuplicateExternalIdError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     background_tasks.add_task(record_task_event, choose_update_action(task, previous), task, previous=previous)
@@ -318,6 +329,63 @@ def ingest_context(
         background_tasks.add_task(record_task_event, "created", task, note="context_ingest")
         created.append(task)
     return ContextIngestResult(created=created, duplicates=duplicates)
+
+
+@app.get(
+    "/api/sources",
+    response_model=list[SourceStateRead],
+    dependencies=[Depends(require_api_key_or_user)],
+)
+@app.get(
+    "/api/agent/sources",
+    response_model=list[SourceStateRead],
+    dependencies=[Depends(require_api_key_or_user)],
+)
+def list_source_states(db: Session = Depends(get_db)) -> list[SourceStateRead]:
+    return get_ingestion_store(db).list_source_states()
+
+
+@app.post(
+    "/api/agent/sources/report",
+    response_model=SourceStateRead,
+    dependencies=[Depends(require_api_key_or_user)],
+)
+def report_source_state(payload: SourceReport, db: Session = Depends(get_db)) -> SourceStateRead:
+    return get_ingestion_store(db).report_source(payload)
+
+
+@app.post(
+    "/api/agent/ingestion/check",
+    response_model=IngestionCheckResult,
+    dependencies=[Depends(require_api_key_or_user)],
+)
+def check_ingestion_items(payload: IngestionCheckRequest, db: Session = Depends(get_db)) -> IngestionCheckResult:
+    store = get_ingestion_store(db)
+    decisions = store.get_decisions(payload.source_id, payload.items)
+    results = []
+    for item in payload.items:
+        decision = decisions.get((item.source_item_id, item.content_fingerprint))
+        results.append(
+            IngestionCheckResultItem(
+                source_item_id=item.source_item_id,
+                content_fingerprint=item.content_fingerprint,
+                should_process=decision_should_process(decision),
+                existing_decision=decision,
+            )
+        )
+    return IngestionCheckResult(source_id=payload.source_id, items=results)
+
+
+@app.post(
+    "/api/agent/ingestion/decisions",
+    response_model=IngestionDecisionRead,
+    dependencies=[Depends(require_api_key_or_user)],
+)
+def record_ingestion_decision(
+    payload: IngestionDecisionWrite,
+    db: Session = Depends(get_db),
+) -> IngestionDecisionRead:
+    return get_ingestion_store(db).record_decision(payload)
 
 
 @app.get("/api/reminders/due", response_model=list[TaskRead], dependencies=[Depends(require_api_key_or_user)])

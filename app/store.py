@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
@@ -23,6 +24,10 @@ class DuplicateExternalIdError(Exception):
     def __init__(self, external_id: str):
         super().__init__(f"Task with external_id {external_id!r} already exists")
         self.external_id = external_id
+
+
+def _external_id_key(external_id: str) -> str:
+    return hashlib.sha256(external_id.encode("utf-8")).hexdigest()
 
 
 class TaskStore(Protocol):
@@ -126,7 +131,14 @@ class SqliteTaskStore:
             task.completed_at = None
         for key, value in updates.items():
             setattr(task, key, value)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            external_id = updates.get("external_id")
+            if external_id and self.get_task_by_external_id(external_id) is not None:
+                raise DuplicateExternalIdError(external_id) from None
+            raise
         self.db.refresh(task)
         return task_to_read(task)
 
@@ -160,7 +172,28 @@ class FirestoreTaskStore:
     def __init__(self):
         self.client = firestore.Client()
         self.collection = self.client.collection("tasks")
+        self.external_ids = self.client.collection("task_external_ids")
         self.counter = self.client.collection("metadata").document("task_counter")
+
+    def _external_id_ref(self, external_id: str):
+        return self.external_ids.document(_external_id_key(external_id))
+
+    def _mapping_state(self, transaction: firestore.Transaction, external_id: str) -> tuple[int | None, object | None]:
+        external_ref = self._external_id_ref(external_id)
+        mapping = external_ref.get(transaction=transaction)
+        if not mapping.exists:
+            return None, None
+        mapping_data = mapping.to_dict() or {}
+        if mapping_data.get("external_id") != external_id:
+            raise RuntimeError("External id hash collision")
+        mapped_task_id = mapping_data.get("task_id")
+        if mapped_task_id is None:
+            return None, external_ref
+        mapped_task = self.collection.document(str(mapped_task_id)).get(transaction=transaction)
+        mapped_data = mapped_task.to_dict() or {} if mapped_task.exists else {}
+        if not mapped_task.exists or mapped_data.get("external_id") != external_id:
+            return None, external_ref
+        return int(mapped_task_id), None
 
     def _next_id(self) -> int:
         @firestore.transactional
@@ -184,6 +217,13 @@ class FirestoreTaskStore:
         return self._doc_to_task(snapshot)
 
     def get_task_by_external_id(self, external_id: str) -> TaskRead | None:
+        mapping = self._external_id_ref(external_id).get()
+        if mapping.exists:
+            mapping_data = mapping.to_dict() or {}
+            if mapping_data.get("external_id") == external_id and mapping_data.get("task_id") is not None:
+                task = self.get_task(int(mapping_data["task_id"]))
+                if task is not None and task.external_id == external_id:
+                    return task
         snapshots = list(self.collection.where("external_id", "==", external_id).limit(1).stream())
         if not snapshots:
             return None
@@ -233,7 +273,24 @@ class FirestoreTaskStore:
             }
         )
         data = encode_task_data(data)
-        self.collection.document(str(task_id)).set(data)
+        task_ref = self.collection.document(str(task_id))
+        if payload.external_id:
+            external_id = payload.external_id
+            external_ref = self._external_id_ref(external_id)
+
+            @firestore.transactional
+            def create_with_external_id(transaction: firestore.Transaction) -> None:
+                owner, stale_ref = self._mapping_state(transaction, external_id)
+                if owner is not None:
+                    raise DuplicateExternalIdError(external_id)
+                if stale_ref is not None:
+                    transaction.delete(stale_ref)
+                transaction.set(task_ref, data)
+                transaction.set(external_ref, {"external_id": external_id, "task_id": task_id})
+
+            create_with_external_id(self.client.transaction())
+        else:
+            task_ref.set(data)
         return TaskRead.model_validate(data)
 
     def update_task(self, task_id: int, payload: TaskUpdate) -> TaskRead | None:
@@ -249,7 +306,51 @@ class FirestoreTaskStore:
             updates["completed_at"] = None
         updates["updated_at"] = utc_now()
         encoded_updates = encode_task_data(updates)
-        ref.update(encoded_updates)
+        if "external_id" in encoded_updates:
+            desired_external_id = encoded_updates["external_id"]
+            if desired_external_id:
+                existing = self.get_task_by_external_id(str(desired_external_id))
+                if existing is not None and existing.id != task_id:
+                    raise DuplicateExternalIdError(str(desired_external_id))
+
+            @firestore.transactional
+            def update_external_id(transaction: firestore.Transaction) -> None:
+                current = ref.get(transaction=transaction)
+                if not current.exists:
+                    return
+                current_data = current.to_dict() or {}
+                current_external_id = current_data.get("external_id")
+                desired_owner = None
+                desired_stale_ref = None
+                if desired_external_id:
+                    desired_external_id_text = str(desired_external_id)
+                    desired_owner, desired_stale_ref = self._mapping_state(transaction, desired_external_id_text)
+                    if desired_owner is not None and desired_owner != task_id:
+                        raise DuplicateExternalIdError(desired_external_id_text)
+                current_owner = None
+                current_stale_ref = None
+                if current_external_id and current_external_id != desired_external_id:
+                    current_owner, current_stale_ref = self._mapping_state(transaction, str(current_external_id))
+
+                for stale_ref in [desired_stale_ref, current_stale_ref]:
+                    if stale_ref is not None:
+                        transaction.delete(stale_ref)
+
+                if desired_external_id:
+                    desired_external_id_text = str(desired_external_id)
+                    transaction.set(
+                        self._external_id_ref(desired_external_id_text),
+                        {"external_id": desired_external_id_text, "task_id": task_id},
+                    )
+                if current_external_id and current_external_id != desired_external_id:
+                    current_external_id_text = str(current_external_id)
+                    if current_owner == task_id:
+                        transaction.delete(self._external_id_ref(current_external_id_text))
+                transaction.update(ref, encoded_updates)
+
+            update_external_id(self.client.transaction())
+        else:
+            ref.update(encoded_updates)
         refreshed = ref.get()
         if not refreshed.exists:
             return None
@@ -275,11 +376,28 @@ class FirestoreTaskStore:
 
     def delete_task(self, task_id: int) -> bool:
         ref = self.collection.document(str(task_id))
-        snapshot = ref.get()
-        if not snapshot.exists:
-            return False
-        ref.delete()
-        return True
+
+        @firestore.transactional
+        def delete_with_external_id(transaction: firestore.Transaction) -> bool:
+            snapshot = ref.get(transaction=transaction)
+            if not snapshot.exists:
+                return False
+            data = snapshot.to_dict() or {}
+            external_id = data.get("external_id")
+            owner = None
+            stale_ref = None
+            if external_id:
+                external_id_text = str(external_id)
+                owner, stale_ref = self._mapping_state(transaction, external_id_text)
+            if stale_ref is not None:
+                transaction.delete(stale_ref)
+            if external_id:
+                if owner == task_id:
+                    transaction.delete(self._external_id_ref(external_id_text))
+            transaction.delete(ref)
+            return True
+
+        return delete_with_external_id(self.client.transaction())
 
     def due_reminders(self, *, now: datetime | None = None) -> list[TaskRead]:
         current = now or datetime.now(timezone.utc)

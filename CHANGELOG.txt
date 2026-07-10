@@ -1,5 +1,63 @@
 Personal Task Assistant Changelog
 
+Version 0.8.0 - 2026-07-10
+
+Source health and proactive visibility:
+- Added durable per-adapter source state in SQLite and Firestore, plus
+  `POST /api/agent/sources/report`, `GET /api/sources`, and
+  `GET /api/agent/sources`, so a healthy empty scan is distinguishable from
+  degraded coverage, unavailable access, expired auth, misconfiguration,
+  rate limiting, and connector failure.
+- Source reports retain `last_success_at` across later failures, record the
+  latest sanitized error and run counts, and accept only HTTP(S) `action_url`
+  values for an explicit reconnect flow; the core app still stores no source
+  credentials and never performs third-party auth on an adapter's behalf.
+- Heartbeat ordering is concurrency-safe: future-skewed reports are rejected,
+  older/equal reports cannot overwrite newer state, SQLite uses a conditional
+  update, Firestore uses a transaction, and SQL timestamps are normalized to
+  UTC before the browser computes staleness.
+- Added a Source health panel to the web UI. It refreshes every minute, shows
+  the last check and normalized scan counts, exposes a safe reconnect link,
+  and marks nominally healthy reports older than 24 hours as stale instead of
+  silently presenting old access as current.
+
+Ingestion decision memory:
+- Added a durable ingestion-decision ledger keyed by `source_id`, stable
+  `source_item_id`, and `content_fingerprint`, with `created`, `duplicate`,
+  `ignored`, `needs_review`, and retryable `failed` outcomes. Deleting or
+  cancelling a task no longer has to erase the decision that keeps the same
+  source item from returning as noise.
+- Added `POST /api/agent/ingestion/check` for batch preflight and
+  `POST /api/agent/ingestion/decisions` for idempotent decision upserts.
+  Unchanged terminal decisions are suppressed, changed fingerprints are
+  reconsidered, and `revisit_after` provides an explicit time-based retry.
+- Added Alembic revision `0003` for `source_states` and
+  `ingestion_decisions`, updated the legacy/create_all stamping heuristic,
+  and implemented the same contract with deterministic document ids in
+  Firestore without requiring composite queries or storing credentials.
+- Batched preflight uses one SQL query or one Firestore `get_all` call instead
+  of up to 500 sequential reads, and Firestore task `external_id` values now
+  use transactional reservation documents so concurrent ingest stays
+  idempotent like SQLite, including legacy-task compatibility.
+
+Reference adapter contract:
+- Upgraded `adapters/telegram_polling_adapter.py` into the full reference
+  implementation: successful `getUpdates` calls act as real read heartbeats,
+  auth/network/API failures are classified and sanitized, allowed messages
+  are fingerprinted before parsing, non-actionable content is recorded as
+  ignored, and created/duplicate outcomes are written after idempotent ingest.
+- Telegram task ids now include a stable bot/source namespace and a
+  content-derived child identity. Edits safely preserve unchanged lines,
+  create new/changed lines, never auto-delete progressed work, and transient
+  failures retry with backoff while honoring Telegram `retry_after`.
+- Added `docs/ADAPTER_CONTRACT.md` with the reusable six-step adapter flow,
+  source status semantics, decision lifecycle, retry rules, privacy boundary,
+  and complete payload examples; synchronized README, API docs, adapter docs,
+  and the placeholder Telegram environment file.
+- Added migration, source-health, decision-ledger, auth, retry, fingerprint,
+  suppression, Telegram outcome, and normalized health-report tests.
+- Bumped the app version from 0.7.0 to 0.8.0.
+
 Version 0.7.0 - 2026-07-08
 
 Standalone packaging:

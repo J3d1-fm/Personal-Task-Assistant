@@ -43,11 +43,28 @@ def _stamped_revision(url: str) -> str:
         engine.dispose()
 
 
+def _table_names(url: str) -> set[str]:
+    engine = create_engine(url)
+    try:
+        return set(inspect(engine).get_table_names())
+    finally:
+        engine.dispose()
+
+
+def _index_names(url: str, table_name: str) -> set[str]:
+    engine = create_engine(url)
+    try:
+        return {index["name"] for index in inspect(engine).get_indexes(table_name)}
+    finally:
+        engine.dispose()
+
+
 def test_fresh_database_is_created_at_head(tmp_path):
     url = f"sqlite:///{tmp_path / 'fresh.db'}"
     run_migrations(url)
     assert "external_id" in _column_names(url)
-    assert _stamped_revision(url) == "0002"
+    assert {"tasks", "source_states", "ingestion_decisions"} <= _table_names(url)
+    assert _stamped_revision(url) == "0003"
 
 
 def test_legacy_database_is_stamped_and_upgraded(tmp_path):
@@ -66,7 +83,8 @@ def test_legacy_database_is_stamped_and_upgraded(tmp_path):
     run_migrations(url)
 
     assert "external_id" in _column_names(url)
-    assert _stamped_revision(url) == "0002"
+    assert {"source_states", "ingestion_decisions"} <= _table_names(url)
+    assert _stamped_revision(url) == "0003"
 
     engine = create_engine(url)
     with engine.connect() as connection:
@@ -83,11 +101,12 @@ def test_create_all_database_is_stamped_at_head(tmp_path):
 
     run_migrations(url)
 
-    assert _stamped_revision(url) == "0002"
+    assert _stamped_revision(url) == "0003"
+    assert "ix_ingestion_decisions_source_item" in _index_names(url, "ingestion_decisions")
 
 
 def test_run_migrations_is_idempotent(tmp_path):
     url = f"sqlite:///{tmp_path / 'twice.db'}"
     run_migrations(url)
     run_migrations(url)
-    assert _stamped_revision(url) == "0002"
+    assert _stamped_revision(url) == "0003"

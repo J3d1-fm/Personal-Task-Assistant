@@ -106,6 +106,19 @@
         </ul>
       </section>
 
+      <section class="source-panel" aria-labelledby="sourceHealthTitle">
+        <div class="source-panel-head">
+          <div>
+            <h2 id="sourceHealthTitle">Source health</h2>
+            <p>Adapters report real read checks; stale or broken access stays visible.</p>
+          </div>
+          <span class="source-refresh-note">Refreshes every minute</span>
+        </div>
+        <div class="source-states" id="sourceStates" aria-live="polite">
+          <div class="empty">Loading source health</div>
+        </div>
+      </section>
+
       <div class="workspace">
         <section class="panel composer">
           <div class="section-heading">

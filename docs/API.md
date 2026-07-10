@@ -62,7 +62,7 @@ curl -X POST "$TASK_TRACKER_URL/api/tasks" \
 
 A task may carry an optional `external_id` (up to 200 characters) that uniquely
 identifies it in the source system, for example
-`telegram:<chat_id>:<message_id>:<line>`. Creating a second task with the same
+`telegram:<source_hash>:<chat_id>:<message_id>:<task_hash>:<occurrence>`. Creating a second task with the same
 `external_id` returns `409 Conflict`, and context ingest reports it as a
 duplicate instead of failing, so adapter retries stay safe.
 
@@ -112,6 +112,79 @@ The same context-ingest contract is also available at
 The response contains `created` (new tasks) and `duplicates` (existing tasks
 matched by `external_id`). Sending the same batch twice creates nothing on the
 second call and returns the original tasks in `duplicates`.
+
+## Report Source Health
+
+Adapters should perform a real least-privilege source read, then report the
+result. The core app never stores source credentials or calls external auth
+endpoints itself.
+
+```bash
+curl -X POST "$TASK_TRACKER_URL/api/agent/sources/report" \
+  -H "Authorization: Bearer $TASK_TRACKER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_id": "gmail:personal",
+    "source_name": "Personal Gmail",
+    "adapter_type": "gmail_polling",
+    "status": "healthy",
+    "items_checked": 42,
+    "candidates": 3,
+    "created": 1,
+    "duplicates": 1,
+    "ignored": 1,
+    "suppressed": 0
+  }'
+```
+
+Statuses are `healthy`, `degraded`, `unavailable`, `reauth_required`,
+`misconfigured`, `rate_limited`, and `failed`. Failure reports may include a
+sanitized `error_code`, `error_message`, and an absolute HTTP(S) `action_url`.
+Optional `checked_at` timestamps are normalized to UTC, may be at most five
+minutes in the future, and are applied monotonically so a late old report cannot
+replace newer health.
+
+Read the latest state through `GET /api/sources` for the web/user surface or
+`GET /api/agent/sources` for an agent client.
+
+## Check And Record Ingestion Decisions
+
+Before parsing or creating tasks, an adapter can ask whether an exact source
+item/fingerprint pair was already handled:
+
+```bash
+curl -X POST "$TASK_TRACKER_URL/api/agent/ingestion/check" \
+  -H "Authorization: Bearer $TASK_TRACKER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_id": "slack:work",
+    "items": [{
+      "source_item_id": "thread:C123:1710000000.000100",
+      "content_fingerprint": "8a86..."
+    }]
+  }'
+```
+
+Record the resulting decision:
+
+```bash
+curl -X POST "$TASK_TRACKER_URL/api/agent/ingestion/decisions" \
+  -H "Authorization: Bearer $TASK_TRACKER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_id": "slack:work",
+    "source_item_id": "thread:C123:1710000000.000100",
+    "content_fingerprint": "8a86...",
+    "decision": "ignored",
+    "reason": "FYI only; no action requested",
+    "decided_by": "adapter"
+  }'
+```
+
+Decisions are `created`, `duplicate`, `ignored`, `needs_review`, and `failed`.
+All except `failed` suppress unchanged content. `revisit_after` can make a
+decision retryable later; a changed fingerprint is immediately processable.
+See `docs/ADAPTER_CONTRACT.md` for the full lifecycle and safety rules.
 
 ## Read Agent Queue
 

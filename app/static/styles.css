@@ -133,10 +133,120 @@ p {
 
 .command-center,
 .panel,
-.column {
+.column,
+.source-panel {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.source-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.source-panel-head,
+.source-state-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.source-panel-head > div {
+  display: grid;
+  gap: 2px;
+}
+
+.source-panel-head p,
+.source-refresh-note,
+.source-state p {
+  font-size: 12px;
+}
+
+.source-refresh-note,
+.source-status-label {
+  color: var(--muted);
+}
+
+.source-states {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.source-state {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--normal);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.source-state.source-warning {
+  border-left-color: var(--urgent);
+  background: var(--warning-soft);
+}
+
+.source-state.source-error {
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.source-state-topline {
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.source-state-topline strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-status-label {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.source-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--normal);
+}
+
+.source-warning .source-status-dot {
+  background: var(--urgent);
+}
+
+.source-error .source-status-dot {
+  background: var(--danger);
+}
+
+.source-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.source-error-message {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.source-action {
+  width: fit-content;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .command-center {

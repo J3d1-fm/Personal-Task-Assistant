@@ -1,16 +1,90 @@
 Personal Task Assistant Technical Documentation
 
-Version: 0.3.6
-Last updated: 2026-06-04
+Version: 0.8.0
+Last updated: 2026-07-10
 
 Overview
 
-Personal Task Assistant is a FastAPI application with a server-rendered HTML shell, static CSS/JS assets, and JSON API endpoints for task creation, task updates, agent queue reads, context ingestion, and reminders.
+Personal Task Assistant is a FastAPI application with a server-rendered HTML
+shell, static CSS/JS assets, and JSON API endpoints for task creation, agent
+coordination, source health, durable ingestion decisions, context ingestion,
+and reminders. SQLite and Firestore expose the same operational contract.
 
-Version 0.3.6 closes the remaining Local Mode review gaps: the doctor validates
-the real app.main startup import path, and launchers identify an existing
-Personal Task Assistant server by both /readyz and the configured local API key
-instead of trusting any service with a /readyz endpoint.
+Version 0.8.0 adds the reliability layer between external inboxes and the task
+queue. Source adapters now report real read health separately from task counts,
+and the ingestion ledger remembers why unchanged source items were created,
+ignored, or held for review. The core app still stores no third-party source
+credentials.
+
+Version 0.8.0 Source Ingestion Reliability
+
+Architecture:
+
+- `source_states` stores only the latest normalized report for each adapter
+  instance. A successful `healthy` report advances `last_success_at`; later
+  failures retain that timestamp while updating `last_error_at` and the
+  sanitized error fields.
+- Source state ordering is atomic and monotonic. SQLite updates only when
+  `last_checked_at` is older than the incoming report; Firestore compares and
+  writes in one transaction. Reports more than five minutes in the future are
+  rejected, and all returned source/decision timestamps are normalized to UTC.
+- `ingestion_decisions` is a separate lifecycle from tasks. Its unique key is
+  `(source_id, source_item_id, content_fingerprint)`, so an unchanged ignored
+  item stays suppressed while materially changed content is evaluated again.
+- `created`, `duplicate`, `ignored`, and `needs_review` are terminal for an
+  unchanged fingerprint. `failed` remains retryable. `revisit_after` makes any
+  terminal decision eligible again at an explicit time.
+- The decision-to-task link is deliberately not a foreign key. Dismissing a
+  noisy task must not delete the receipt that prevents the source item from
+  being recreated.
+- Adapters own source credentials, safe token refresh, cursors, API calls, and
+  retries. The core accepts only normalized state and an optional HTTP(S)
+  reconnect action URL.
+
+New runtime files and surfaces:
+
+- `app/ingestion_store.py` implements the SQLite and Firestore source/decision
+  stores. Firestore uses SHA-256 document ids derived from logical keys, which
+  avoids path-character problems and composite-index requirements.
+- `migrations/versions/0003_add_source_health_and_ingestion_decisions.py`
+  creates both SQL tables. `app/migrate.py` recognizes a create_all-shaped
+  database with both tables as revision 0003, an external_id-only database as
+  0002, and the original legacy task table as 0001.
+- `POST /api/agent/sources/report` upserts a source heartbeat; `GET /api/sources`
+  and `GET /api/agent/sources` list the latest adapter states.
+- `POST /api/agent/ingestion/check` batch-checks exact item/fingerprint pairs;
+  `POST /api/agent/ingestion/decisions` records or updates an outcome.
+- Batch checks use one SQL query or Firestore `get_all`, not one remote read per
+  item. Decision upserts preserve the original `decided_at` and only advance
+  `updated_at`.
+- The web UI refreshes source state once per minute. It shows normalized run
+  counts and reconnect actions, and treats a healthy report older than 24 hours
+  as a stale heartbeat. Its render signature includes that derived stale flag,
+  so time alone can change Healthy to Stale while unchanged intermediate polls
+  do not repeatedly announce the same cards to screen readers.
+- `docs/ADAPTER_CONTRACT.md` is the public protocol. The Telegram polling
+  adapter implements every step and reports a healthy heartbeat at most once
+  per `TELEGRAM_HEALTH_REPORT_INTERVAL` (300 seconds by default).
+- Telegram source identity defaults to the stable public bot id, not the token
+  secret. Task external ids add a source namespace and content-stable task hash:
+  line reorder/insert does not corrupt existing identity, separate bots cannot
+  collide, new/changed lines create tasks, and removed lines never auto-delete
+  work already in progress.
+- Long-running Telegram polling retries transient failures with bounded local
+  exponential backoff. Telegram `retry_after` is honored in full; auth failures
+  stop until credentials are fixed.
+
+Security and privacy:
+
+- Health error messages must be sanitized by the adapter and are limited to
+  2,000 characters. Telegram bot tokens are redacted before reporting.
+- `action_url` accepts absolute HTTP(S) values only; JavaScript and other URL
+  schemes are rejected by request validation and checked again by the UI.
+- Dry-run Telegram execution does not write tasks, ingestion decisions, source
+  states, or offset state.
+- Source item fingerprints are hashes of normalized content. Raw message text
+  stays in the existing task `source_context` only when a task is actually
+  created; ignored receipts do not copy the raw message into the ledger.
 
 Changed Files
 
@@ -275,6 +349,14 @@ Production storage:
 - `TASK_STORE=firestore` selects the Firestore backend.
 - Task records are stored in the Firestore collection `tasks`.
 - The numeric task id counter is stored in Firestore at `metadata/task_counter`.
+- Firestore reserves each non-null task `external_id` transactionally in
+  `task_external_ids`. Create/update/delete maintain the mapping from the task
+  snapshot read inside the transaction, stale mappings are removed after all
+  reads, and a compatibility query still detects pre-0.8 tasks that have no
+  reservation document.
+- Source heartbeat snapshots use `source_states`; item decision receipts use
+  `ingestion_decisions`. Their document ids hash an unambiguous JSON tuple of
+  logical keys, so embedded separator characters cannot collide.
 - There is no TTL, retention job, or archive job in the current code.
 
 Local development storage:
@@ -349,31 +431,52 @@ Local Mode is intended for loopback access at `127.0.0.1`. Do not expose it with
 `--host 0.0.0.0`, LAN access, or a public tunnel unless real authentication is
 configured first.
 
-No database migration is required for version 0.3.6. The live task schema is unchanged because DD uses the existing `due_at` field and date set uses the existing `created_at` field. The only production configuration added in 0.2.4 is optional Sheets history access.
+Version 0.8.0 requires Alembic revision 0003. Application startup applies it
+automatically for SQLite deployments. Firestore is schemaless and starts using
+the `source_states` and `ingestion_decisions` collections when an adapter first
+reports data. The existing `tasks` schema and task API remain backward
+compatible.
 
 Rollback Notes
 
-To roll back version 0.3.6, revert these files to the previous version:
+To roll code back from 0.8.0 to 0.7.0, stop the tracker, back up the SQLite
+database, and revert the release files. Revision 0003 adds tables without
+changing `tasks`, so older 0.7.0 code can run while the unused tables remain.
+If the source-health and ingestion-decision data must also be removed, run an
+Alembic downgrade to 0002 only after backup; that permanently deletes the
+receipts and allows previously ignored source items to surface again. Firestore
+rollback may leave the three unused collections (`source_states`,
+`ingestion_decisions`, and `task_external_ids`) in place safely.
+
+The main 0.8.0 rollback surface is:
 
 - app/config.py
+- app/ingestion_store.py
+- app/main.py
+- app/migrate.py
+- app/models.py
+- app/schemas.py
+- app/static/app.js
+- app/static/styles.css
+- app/store.py
+- app/templates/index.html
 - README.md
 - CHANGELOG.txt
-- run-local.command
 - docs/API.md
-- docs/EXAMPLES.md
-- docs/INSTALLATION.md
-- docs/AGENT_INSTALL.md
-- docs/LOCAL_MODE.md
-- docs/LAUNCH.md
+- docs/ADAPTER_CONTRACT.md
 - docs/TECHNICAL_DOCUMENTATION.txt
 - adapters/README.md
 - adapters/telegram.env.example
 - adapters/telegram_polling_adapter.py
-- scripts/local_doctor.py
-- scripts/run_local.py
-- scripts/setup_wizard.py
+- migrations/versions/0003_add_source_health_and_ingestion_decisions.py
+- tests/conftest.py
+- tests/test_firestore_task_store.py
+- tests/test_ingestion_contract.py
+- tests/test_migrations.py
+- tests/test_telegram_adapter.py
 
-The changelog and this technical documentation can remain as history or be reverted with the same version rollback. If rolling back to 0.3.0, the installer and agent install docs disappear but the agent queue/API behavior remains. If rolling back to 0.2.6, agent queue endpoints and automatic DD estimates disappear. If rolling back past 0.2.4, also unset `TASK_HISTORY_SHEET_ID` on Cloud Run.
+The changelog and technical documentation can remain as release history or be
+reverted with the same version rollback.
 
 Verification Performed
 
@@ -420,3 +523,29 @@ Verification Performed
 - Version 0.3.6 Local Mode doctor smoke passed with `import app.main` and no SQLite file side effect.
 - Version 0.3.6 Local Mode launcher smoke passed for the port-8000 conflict path.
 - Version 0.3.6 `git diff --check` passed.
+- Version 0.8.0 `.venv/bin/ruff check .` passed.
+- Version 0.8.0 `.venv/bin/pytest -q` passed with 90 tests; the only output was
+  the existing Starlette TestClient deprecation warning.
+- Version 0.8.0 `node --check app/static/app.js` and `git diff --check` passed.
+- Migration validation covered fresh databases, 0.3.x legacy task tables,
+  create_all-shaped databases, repeated upgrades, and revision 0003 table
+  creation without changing existing task data.
+- Source contract tests covered healthy-to-reauth transitions, retained last
+  success, concurrent/out-of-order ordering, future-skew rejection, UTC output,
+  HTTP(S)-only action URLs, unchanged-item suppression, changed fingerprints,
+  expired revisit times, retryable failures, batch reads, and endpoint auth.
+- Telegram reference tests covered stable item identity, content-sensitive
+  fingerprints, multi-bot namespaces, reorder/insert/remove edit behavior,
+  preservation of in-progress tasks, ignored receipts, known-item suppression,
+  created-task receipts, full Retry-After handling, transient retry, and
+  normalized health-report payloads.
+- Firestore parity tests covered source/decision transactions, collision-safe
+  document keys, atomic task external-id reservations, legacy unreserved task
+  detection, and interleaved update/delete mapping cleanup using the task state
+  read inside the transaction.
+- Version 0.8.0 local browser smoke passed against a temporary migrated SQLite
+  database: healthy Telegram, Gmail reauth-required, and 24h-stale Slack states
+  rendered in attention order with Dubai-local display derived from UTC API
+  timestamps, expected counts, and an HTTPS reconnect link. The page body had
+  zero horizontal overflow at 1280px and the browser console had no warnings or
+  errors.

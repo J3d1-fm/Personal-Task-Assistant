@@ -37,8 +37,9 @@ It provides:
 
 - A web UI for reviewing, sorting, assigning, and completing human/AI tasks.
 - A JSON API for agents and integrations to create, ingest, read, and update tasks.
-- A connector contract for user-built adapters from task trackers, chats, and inboxes.
-- A reference Telegram polling adapter that demonstrates the connector pattern.
+- A connector contract with durable source health and ingestion-decision receipts.
+- A reference Telegram polling adapter that demonstrates heartbeat reporting,
+  ignored-item memory, fingerprint-aware replay, and idempotent task ingest.
 - Database-backed storage, with SQLite for local development and Firestore for Google Cloud.
 - Automatic DD estimates when the source did not provide a deadline.
 - Reminder fields so missed tasks can be queried and notified.
@@ -222,7 +223,7 @@ storing its credentials safely, and deciding what data is allowed to enter the
 assistant.
 
 Adapters can pass an optional `external_id` (for example
-`telegram:<chat_id>:<message_id>:<line>`) with each task. Ingest is then
+`telegram:<source_hash>:<chat_id>:<message_id>:<task_hash>:<occurrence>`) with each task. Ingest is then
 idempotent: replayed webhooks, lost adapter state, or retried polling runs
 report the existing task as a duplicate instead of creating a second copy.
 
@@ -249,6 +250,7 @@ the connector model:
 - stores only a local update offset and never commits credentials.
 
 See `adapters/README.md` for setup.
+See `docs/ADAPTER_CONTRACT.md` for the complete reusable adapter contract.
 
 ## Roadmap
 

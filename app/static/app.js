@@ -25,6 +25,8 @@ const sortSelect = document.querySelector("#taskSort");
 const filterButtons = [...document.querySelectorAll("[data-filter]")];
 let dragState = null;
 let allTasks = [];
+let allSources = [];
+let lastSourceSignature = null;
 let activeFilter = normalizeFilter(localStorage.getItem("taskTrackerFilter"));
 let activeSort = localStorage.getItem("taskTrackerSort") || "smart";
 let activeSearch = "";
@@ -260,6 +262,96 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function sourceStatusLabel(source) {
+  if (source.status === "healthy" && isSourceStale(source)) return "Stale heartbeat";
+  const labels = {
+    healthy: "Healthy",
+    degraded: "Degraded",
+    unavailable: "Unavailable",
+    reauth_required: "Reconnect required",
+    misconfigured: "Misconfigured",
+    rate_limited: "Rate limited",
+    failed: "Failed",
+  };
+  return labels[source.status] || titleCaseStatus(source.status);
+}
+
+function isSourceStale(source, now = Date.now()) {
+  const checkedAt = new Date(source.last_checked_at);
+  if (Number.isNaN(checkedAt.valueOf())) return true;
+  return now - checkedAt.getTime() > 24 * 60 * 60 * 1000;
+}
+
+function sourceRenderSignature(sources, now = Date.now()) {
+  return JSON.stringify(sources.map((source) => [source, isSourceStale(source, now)]));
+}
+
+function sourceStatusClass(source) {
+  if (source.status === "healthy" && !isSourceStale(source)) return "source-healthy";
+  if (["degraded", "rate_limited"].includes(source.status)) return "source-warning";
+  return "source-error";
+}
+
+function safeActionUrl(value) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function sourceNode(source) {
+  const node = document.createElement("article");
+  node.className = `source-state ${sourceStatusClass(source)}`;
+  const actionUrl = safeActionUrl(source.action_url);
+  const stats = [
+    `${source.items_checked} checked`,
+    `${source.created} created`,
+    `${source.duplicates} duplicates`,
+    `${source.ignored} ignored`,
+    `${source.suppressed} suppressed`,
+  ];
+  node.innerHTML = `
+    <div class="source-state-topline">
+      <span class="source-status-dot" aria-hidden="true"></span>
+      <strong>${escapeHtml(source.source_name)}</strong>
+      <span class="source-status-label">${escapeHtml(sourceStatusLabel(source))}</span>
+    </div>
+    <p>${escapeHtml(source.adapter_type)} · checked ${escapeHtml(formatDateTime(source.last_checked_at))}</p>
+    <div class="source-stats">${stats.map((stat) => `<span class="pill">${escapeHtml(stat)}</span>`).join("")}</div>
+    ${source.error_message ? `<p class="source-error-message">${escapeHtml(source.error_message)}</p>` : ""}
+    ${actionUrl ? `<a class="source-action" href="${escapeHtml(actionUrl)}" target="_blank" rel="noreferrer">Reconnect</a>` : ""}
+  `;
+  return node;
+}
+
+function renderSources() {
+  const container = document.querySelector("#sourceStates");
+  container.innerHTML = "";
+  if (allSources.length === 0) {
+    container.innerHTML = '<div class="empty">No adapter heartbeat has been reported yet</div>';
+    return;
+  }
+  allSources.forEach((source) => container.appendChild(sourceNode(source)));
+}
+
+async function loadSources() {
+  const container = document.querySelector("#sourceStates");
+  try {
+    const nextSources = await request("/api/sources");
+    const signature = sourceRenderSignature(nextSources);
+    if (signature === lastSourceSignature) return;
+    allSources = nextSources;
+    lastSourceSignature = signature;
+    renderSources();
+  } catch (error) {
+    lastSourceSignature = null;
+    container.innerHTML = `<div class="error">Could not load source health: ${escapeHtml(error.message)}</div>`;
+  }
 }
 
 function titleCaseStatus(value) {
@@ -573,3 +665,5 @@ async function loadTasks() {
 persistFilter();
 persistSort();
 loadTasks();
+loadSources();
+setInterval(loadSources, 60_000);
