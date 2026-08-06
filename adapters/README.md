@@ -61,6 +61,14 @@ set +a
 python3 adapters/telegram_polling_adapter.py --once --dry-run
 ```
 
+For always-on operation (required for the review buttons to respond), install
+the supervised job — it loads the repo's `.env` and restarts the adapter after
+transient failures:
+
+```bash
+automation/install.sh --telegram
+```
+
 Run one real polling pass:
 
 ```bash

@@ -33,13 +33,31 @@ TELEGRAM_TOKEN_URL_RE = re.compile(r"(https://api\.telegram\.org/bot)[^/\s]+")
 # Inline-button actions on review requests sent by automation/notify.py. The
 # button press is the human's decision arriving through Telegram — this is the
 # one path in the adapter that may close a task, and it acts only on explicit
-# callback data from an allowed chat.
+# callback data from an allowed chat. Confirmation texts follow ASSISTANT_LANG;
+# the callback_data protocol never changes.
 CALLBACK_ACTION_RE = re.compile(r"^task:(done|rework|block):(\d+)$")
-CALLBACK_ACTIONS: dict[str, tuple[dict[str, str], str]] = {
-    "done": ({"status": "done"}, "✅ Approved — task closed."),
-    "rework": ({"status": "in_progress"}, "🔁 Sent back to in progress."),
-    "block": ({"status": "blocked"}, "✋ Blocked — add the reason in the tracker."),
+CALLBACK_ACTIONS: dict[str, tuple[dict[str, str], dict[str, str]]] = {
+    "done": (
+        {"status": "done"},
+        {"en": "✅ Approved — task closed.", "ru": "✅ Принято — задача закрыта."},
+    ),
+    "rework": (
+        {"status": "in_progress"},
+        {"en": "🔁 Sent back to in progress.", "ru": "🔁 Возвращена в работу."},
+    ),
+    "block": (
+        {"status": "blocked"},
+        {"en": "✋ Blocked — add the reason in the tracker.", "ru": "✋ Заблокирована — причину добавь в трекере."},
+    ),
 }
+CALLBACK_MESSAGES: dict[str, dict[str, str]] = {
+    "unsupported": {"en": "Unsupported action.", "ru": "Неизвестное действие."},
+    "failed": {"en": "Failed to update #{task_id} — see adapter logs.", "ru": "Не получилось обновить #{task_id} — смотри логи адаптера."},
+}
+
+
+def assistant_lang() -> str:
+    return "ru" if os.getenv("ASSISTANT_LANG", "").strip().lower().startswith("ru") else "en"
 
 
 @dataclass(frozen=True)
@@ -518,13 +536,15 @@ def handle_callback(config: AdapterConfig, callback: dict[str, Any]) -> None:
     message = callback.get("message") or {}
     if not message or not is_allowed_chat(config, message):
         return
+    lang = assistant_lang()
     parsed = parse_callback_action(str(callback.get("data") or ""))
     answer: dict[str, Any] = {"callback_query_id": callback.get("id")}
     if parsed is None:
-        telegram_post(config, "answerCallbackQuery", {**answer, "text": "Unsupported action."})
+        telegram_post(config, "answerCallbackQuery", {**answer, "text": CALLBACK_MESSAGES["unsupported"][lang]})
         return
     action, task_id = parsed
-    payload, confirmation = CALLBACK_ACTIONS[action]
+    payload, confirmations = CALLBACK_ACTIONS[action]
+    confirmation = confirmations[lang]
     if config.dry_run:
         print(f"dry-run: would PATCH /api/tasks/{task_id} with {json.dumps(payload)}")
         return
@@ -535,7 +555,7 @@ def handle_callback(config: AdapterConfig, callback: dict[str, Any]) -> None:
         telegram_post(
             config,
             "answerCallbackQuery",
-            {**answer, "text": f"Failed to update #{task_id} — see adapter logs.", "show_alert": True},
+            {**answer, "text": CALLBACK_MESSAGES["failed"][lang].format(task_id=task_id), "show_alert": True},
         )
         return
     telegram_post(config, "answerCallbackQuery", {**answer, "text": f"#{task_id}: {confirmation}"})

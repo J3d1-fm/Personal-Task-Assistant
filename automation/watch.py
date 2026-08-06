@@ -43,10 +43,21 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "automation"))
 
-from notify import NotifyConfig, load_notify_config, review_reply_markup, send_message  # noqa: E402
+from notify import (  # noqa: E402
+    NotifyConfig,
+    assistant_lang,
+    load_notify_config,
+    review_reply_markup,
+    send_message,
+)
 
 DEFAULT_URL = os.getenv("TASK_TRACKER_URL", "http://127.0.0.1:8000")
 DEFAULT_STATE = ROOT / "automation" / ".watch_state.json"
+
+WATCH_STRINGS = {
+    "en": {"review": "👀 Review needed", "reminder": "⏰ Reminder", "due": "due"},
+    "ru": {"review": "👀 Нужно ревью", "reminder": "⏰ Напоминание", "due": "срок"},
+}
 
 
 @dataclass(frozen=True)
@@ -58,6 +69,7 @@ class WatchConfig:
     work_enabled: bool
     work_max_tasks: int
     notify: NotifyConfig | None
+    lang: str = "en"
 
 
 def _bool_env(name: str) -> bool:
@@ -76,6 +88,7 @@ def load_watch_config(args: argparse.Namespace) -> WatchConfig:
         work_enabled=_bool_env("WATCH_WORK"),
         work_max_tasks=max(1, int(os.getenv("WATCH_WORK_MAX_TASKS", "3"))),
         notify=load_notify_config(),
+        lang=assistant_lang(),
     )
 
 
@@ -102,9 +115,10 @@ def agent_backlog(tasks: list[dict]) -> list[dict]:
     return [t for t in tasks if t.get("assignee") == "codex" and t.get("status") == "backlog"]
 
 
-def format_review_request(task: dict) -> str:
+def format_review_request(task: dict, lang: str = "en") -> str:
+    t = WATCH_STRINGS.get(lang, WATCH_STRINGS["en"])
     lines = [
-        f"👀 Review needed: #{task['id']} {task['title']}",
+        f"{t['review']}: #{task['id']} {task['title']}",
         f"P{task['priority']} · {task['assignee']} · waiting_review",
     ]
     description = (task.get("description") or "").strip()
@@ -116,11 +130,12 @@ def format_review_request(task: dict) -> str:
     return "\n".join(lines)
 
 
-def format_reminder(task: dict) -> str:
+def format_reminder(task: dict, lang: str = "en") -> str:
+    t = WATCH_STRINGS.get(lang, WATCH_STRINGS["en"])
     due = (task.get("due_at") or task.get("reminder_at") or "")[:16].replace("T", " ")
     lines = [
-        f"⏰ Reminder: #{task['id']} {task['title']}",
-        f"P{task['priority']} · {task['assignee']}/{task['status']}" + (f" · due {due}" if due else ""),
+        f"{t['reminder']}: #{task['id']} {task['title']}",
+        f"P{task['priority']} · {task['assignee']}/{task['status']}" + (f" · {t['due']} {due}" if due else ""),
     ]
     return "\n".join(lines)
 
@@ -166,7 +181,7 @@ def tick(
         if config.notify is not None:
             reminders = client.get("/api/reminders/due").raise_for_status().json()
             for task in reminders:
-                if send_message(config.notify, format_reminder(task)):
+                if send_message(config.notify, format_reminder(task, config.lang)):
                     client.patch(
                         f"/api/tasks/{task['id']}",
                         json={"reminder_last_sent_at": current.isoformat()},
@@ -175,8 +190,8 @@ def tick(
 
             to_announce, retained = plan_review_notifications(tasks, state.get("review_notified", {}))
             for task in to_announce:
-                markup = review_reply_markup(int(task["id"]))
-                if send_message(config.notify, format_review_request(task), reply_markup=markup):
+                markup = review_reply_markup(int(task["id"]), config.lang)
+                if send_message(config.notify, format_review_request(task, config.lang), reply_markup=markup):
                     retained[str(task["id"])] = str(task.get("updated_at") or "")
                     print(f"review request sent for #{task['id']} {task['title']}")
             state["review_notified"] = retained

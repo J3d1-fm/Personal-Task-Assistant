@@ -64,6 +64,18 @@ FINAL_INSTRUCTION = (
 )
 
 
+def system_prompt() -> str:
+    """Worker instructions, adjusted to the assistant language for the text
+    the human will read (task titles, descriptions, notes)."""
+    prompt = SYSTEM_PROMPT
+    if os.getenv("ASSISTANT_LANG", "").strip().lower().startswith("ru"):
+        prompt += (
+            "\n\nWrite all user-facing task text — titles, descriptions, notes, and "
+            "your final summary — in Russian."
+        )
+    return prompt
+
+
 def _text(content_blocks) -> str:
     parts = []
     for block in content_blocks:
@@ -104,7 +116,7 @@ async def _run(url: str, api_key: str, max_tasks: int, model: str) -> list[dict]
             response = client.messages.create(
                 model=model,
                 max_tokens=2048,
-                system=SYSTEM_PROMPT,
+                system=system_prompt(),
                 tools=anthropic_tools,
                 messages=messages,
             )

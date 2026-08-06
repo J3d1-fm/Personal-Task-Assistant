@@ -396,3 +396,20 @@ def test_callback_tracker_failure_alerts_without_editing(monkeypatch):
     process_update(config, {"update_id": 1, "callback_query": _callback()})
     assert [method for method, _ in telegram_calls] == ["answerCallbackQuery"]
     assert telegram_calls[0][1]["show_alert"] is True
+
+
+def test_callback_confirmation_localized_to_russian(monkeypatch):
+    monkeypatch.setenv("ASSISTANT_LANG", "ru")
+    config = _config(dry_run=False)
+    telegram_calls = []
+    monkeypatch.setattr(telegram_adapter, "tracker_patch", lambda *_args: {})
+    monkeypatch.setattr(
+        telegram_adapter,
+        "telegram_post",
+        lambda _config, method, payload: telegram_calls.append((method, payload)) or True,
+    )
+    process_update(config, {"update_id": 1, "callback_query": _callback("done")})
+    answer = telegram_calls[0][1]
+    assert "Принято" in answer["text"]
+    edit = telegram_calls[1][1]
+    assert "задача закрыта" in edit["text"]

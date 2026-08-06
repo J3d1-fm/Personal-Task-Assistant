@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd job that keeps the Telegram polling adapter (task ingest + review
+  button callbacks) running. __REPO__ is replaced with the absolute repository
+  path by install.sh. Do not load this directly; run
+  automation/install.sh --telegram.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.taskassistant.telegram</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__REPO__/automation/telegram_run.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>__REPO__/automation/logs/telegram.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__REPO__/automation/logs/telegram.err.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO__</string>
+</dict>
+</plist>

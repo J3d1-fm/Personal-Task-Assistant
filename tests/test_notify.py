@@ -106,3 +106,40 @@ def test_review_reply_markup_encodes_all_three_actions():
     markup = json.loads(review_reply_markup(15))
     data = [button["callback_data"] for row in markup["inline_keyboard"] for button in row]
     assert data == ["task:done:15", "task:rework:15", "task:block:15"]
+
+
+def test_review_reply_markup_localizes_labels_not_protocol():
+    ru = json.loads(review_reply_markup(15, lang="ru"))
+    labels = [b["text"] for row in ru["inline_keyboard"] for b in row]
+    data = [b["callback_data"] for row in ru["inline_keyboard"] for b in row]
+    assert labels == ["✅ Готово", "🔁 Доработать", "✋ Блок"]
+    assert data == ["task:done:15", "task:rework:15", "task:block:15"]
+
+
+def test_voice_candidates_prefers_explicit_then_language():
+    from notify import voice_candidates
+
+    assert voice_candidates("Samantha", "ru") == ["Samantha"]
+    assert voice_candidates(None, "ru") == ["Milena (Enhanced)", "Milena"]
+    assert voice_candidates(None, "en") == [None]
+
+
+def test_synthesize_speech_falls_back_to_next_voice(monkeypatch, tmp_path):
+    import subprocess
+
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if "Milena (Enhanced)" in command:
+            raise subprocess.CalledProcessError(1, command, stderr=b"Voice not found")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(notify.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(notify.subprocess, "run", fake_run)
+    target = tmp_path / "digest.m4a"
+    result = notify.synthesize_speech("привет", target, voices=["Milena (Enhanced)", "Milena"])
+    assert result == target
+    say_calls = [c for c in calls if c[0].endswith("say")]
+    assert "Milena (Enhanced)" in say_calls[0]
+    assert "Milena" in say_calls[1]

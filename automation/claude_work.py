@@ -44,7 +44,7 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "automation"))
 
-from work_loop import FINAL_INSTRUCTION, SYSTEM_PROMPT  # noqa: E402
+from work_loop import FINAL_INSTRUCTION, system_prompt  # noqa: E402
 
 MCP_SERVER_NAME = "task-assistant"
 DEFAULT_TIMEOUT = 900.0
@@ -85,7 +85,7 @@ def build_command(binary: str, config_path: str, *, model: str | None = None) ->
         "--allowed-tools",
         f"mcp__{MCP_SERVER_NAME}",
         "--append-system-prompt",
-        SYSTEM_PROMPT,
+        system_prompt(),
         "--output-format",
         "json",
         "--permission-mode",

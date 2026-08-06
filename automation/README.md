@@ -99,9 +99,23 @@ lands in `logs/`. To have the assistant deliver it, add to `.env`:
 ```bash
 TELEGRAM_BOT_TOKEN=...            # the same bot the polling adapter uses
 TELEGRAM_NOTIFY_CHAT_ID=123456789 # your chat with the bot
+# ASSISTANT_LANG=ru               # everything the assistant says: digest,
+                                  # voice, reminders, buttons (default en)
 # optional spoken digest (macOS only — uses `say` + `afconvert`):
 # TELEGRAM_DIGEST_VOICE=1
-# TELEGRAM_DIGEST_VOICE_NAME=Samantha
+# TELEGRAM_DIGEST_VOICE_NAME=Samantha  # explicit voice; with ASSISTANT_LANG=ru
+                                       # the default is Milena, auto-upgrading
+                                       # to "Milena (Enhanced)" once downloaded
+                                       # (Settings -> Accessibility -> Spoken Content)
+# TELEGRAM_DIGEST_VOICE_RATE=170       # words per minute
+```
+
+The review-button presses come back through the Telegram polling adapter —
+run it supervised so the buttons always work:
+
+```bash
+automation/install.sh --telegram            # launchd KeepAlive / systemd
+automation/install.sh --telegram --remove
 ```
 
 The ritual then sends the digest text (and, with voice on, a short spoken

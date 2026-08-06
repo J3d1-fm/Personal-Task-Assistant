@@ -1,5 +1,46 @@
 Personal Task Assistant Changelog
 
+Version 0.11.0 - 2026-08-06
+
+The assistant speaks your language:
+- Added ASSISTANT_LANG (en default, ru supported): one switch localizes
+  everything the assistant says — the daily digest (render_digest section
+  titles and counts via a STRINGS table), the spoken voice-note script
+  (a native Russian render with correct plural agreement via ru_plural:
+  1 задача / 3 задачи / 5 задач), watch-loop reminders and review requests,
+  the inline button labels (✅ Готово / 🔁 Доработать / ✋ Блок), and the
+  adapter's button confirmations. The callback_data protocol and all logs
+  stay English; the web UI is out of scope for now.
+- With ASSISTANT_LANG=ru the work loop's system prompt additionally tells
+  the agent to write user-facing task text (titles, descriptions, notes,
+  summaries) in Russian — both the API loop and the headless Claude Code
+  runner share this via work_loop.system_prompt().
+
+Voice quality controls:
+- Voice selection: TELEGRAM_DIGEST_VOICE_NAME still forces an exact voice;
+  without it the Russian digest now defaults to Milena and automatically
+  prefers "Milena (Enhanced)" the moment the user downloads it in macOS
+  Settings -> Accessibility -> Spoken Content (synthesize_speech tries
+  voice candidates in order and falls back on failure).
+- Added TELEGRAM_DIGEST_VOICE_RATE (words per minute, `say -r`) for pace
+  control.
+
+Supervised Telegram adapter:
+- Added `automation/install.sh --telegram`: installs the polling adapter as
+  a KeepAlive job (launchd on macOS via com.taskassistant.telegram.plist +
+  telegram_run.sh, a systemd user service on Linux), sharing the same verbs
+  as the other jobs (--remove/--dry-run). The adapter is the bot's single
+  getUpdates consumer, so without a supervised instance the review buttons
+  answer nothing — the docs now say so explicitly.
+- install.sh internally deduplicated: launchd KeepAlive and systemd service
+  installation are shared helpers used by both the watch loop and the
+  Telegram adapter targets.
+- Added localization and voice tests: Russian digest/spoken rendering,
+  plural agreement, localized button labels with an unchanged protocol,
+  voice candidate ordering and fallback, and the adapter's Russian
+  confirmations (138 tests total).
+- Bumped the app version from 0.10.0 to 0.11.0.
+
 Version 0.10.0 - 2026-08-06
 
 Local work runner — the agent leg with no API billing:

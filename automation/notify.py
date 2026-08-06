@@ -42,10 +42,16 @@ class NotifyConfig:
     chat_id: str
     voice_enabled: bool = False
     voice_name: str | None = None
+    voice_rate: int | None = None
 
 
 def _bool_env(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def assistant_lang() -> str:
+    """Language of everything the assistant says (ASSISTANT_LANG=ru|en)."""
+    return "ru" if os.getenv("ASSISTANT_LANG", "").strip().lower().startswith("ru") else "en"
 
 
 def load_notify_config() -> NotifyConfig | None:
@@ -54,12 +60,29 @@ def load_notify_config() -> NotifyConfig | None:
     chat_id = os.getenv("TELEGRAM_NOTIFY_CHAT_ID", "").strip()
     if not token or token == "change-me" or not chat_id:
         return None
+    rate_raw = os.getenv("TELEGRAM_DIGEST_VOICE_RATE", "").strip()
+    try:
+        rate = int(rate_raw) if rate_raw else None
+    except ValueError:
+        rate = None
     return NotifyConfig(
         bot_token=token,
         chat_id=chat_id,
         voice_enabled=_bool_env("TELEGRAM_DIGEST_VOICE"),
         voice_name=os.getenv("TELEGRAM_DIGEST_VOICE_NAME", "").strip() or None,
+        voice_rate=rate,
     )
+
+
+def voice_candidates(explicit: str | None, lang: str) -> list[str | None]:
+    """Voices to try in order. Russian prefers the enhanced Milena when the
+    user has downloaded it (Settings -> Accessibility -> Spoken Content) and
+    quietly falls back to the built-in compact one."""
+    if explicit:
+        return [explicit]
+    if lang == "ru":
+        return ["Milena (Enhanced)", "Milena"]
+    return [None]
 
 
 def redact(text: object, token: str) -> str:
@@ -140,11 +163,18 @@ def send_audio(config: NotifyConfig, path: Path, *, title: str) -> bool:
         return False
 
 
-def synthesize_speech(text: str, target: Path, *, voice: str | None = None) -> Path | None:
+def synthesize_speech(
+    text: str,
+    target: Path,
+    *,
+    voices: tuple[str | None, ...] | list[str | None] = (None,),
+    rate: int | None = None,
+) -> Path | None:
     """Render text to an .m4a via macOS `say` + `afconvert`; None if unavailable.
 
-    Both binaries ship with macOS; on other platforms this quietly returns
-    None so the text digest still goes out alone.
+    Voices are tried in order (a not-installed voice fails fast and the next
+    candidate is tried). Both binaries ship with macOS; on other platforms
+    this quietly returns None so the text digest still goes out alone.
     """
     say = shutil.which("say")
     afconvert = shutil.which("afconvert")
@@ -153,38 +183,53 @@ def synthesize_speech(text: str, target: Path, *, voice: str | None = None) -> P
         return None
     target.parent.mkdir(parents=True, exist_ok=True)
     aiff = target.with_suffix(".aiff")
-    command = [say, "-o", str(aiff)]
-    if voice:
-        command += ["-v", voice]
-    command.append(text)
+    last_error = ""
     try:
-        subprocess.run(command, check=True, capture_output=True, timeout=120)
-        subprocess.run(
-            [afconvert, "-f", "m4af", "-d", "aac", str(aiff), str(target)],
-            check=True,
-            capture_output=True,
-            timeout=120,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        detail = getattr(exc, "stderr", b"") or b""
-        print(f"spoken digest skipped: {exc} {detail.decode(errors='replace')[:200]}", file=sys.stderr)
-        return None
+        for voice in voices or (None,):
+            command = [say, "-o", str(aiff)]
+            if voice:
+                command += ["-v", voice]
+            if rate:
+                command += ["-r", str(rate)]
+            command.append(text)
+            try:
+                subprocess.run(command, check=True, capture_output=True, timeout=120)
+                subprocess.run(
+                    [afconvert, "-f", "m4af", "-d", "aac", str(aiff), str(target)],
+                    check=True,
+                    capture_output=True,
+                    timeout=120,
+                )
+                return target
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                detail = (getattr(exc, "stderr", b"") or b"").decode(errors="replace")[:200]
+                last_error = f"{exc} {detail}"
     finally:
         aiff.unlink(missing_ok=True)
-    return target
+    print(f"spoken digest skipped: {last_error}", file=sys.stderr)
+    return None
 
 
-def review_reply_markup(task_id: int) -> str:
-    """Inline keyboard for a review request; handled by the polling adapter."""
+BUTTON_LABELS = {
+    "en": ("✅ Done", "🔁 Rework", "✋ Block"),
+    "ru": ("✅ Готово", "🔁 Доработать", "✋ Блок"),
+}
+
+
+def review_reply_markup(task_id: int, lang: str = "en") -> str:
+    """Inline keyboard for a review request; handled by the polling adapter.
+    Labels follow the assistant language; callback_data is the protocol and
+    never changes."""
     import json
 
+    done, rework, block = BUTTON_LABELS.get(lang, BUTTON_LABELS["en"])
     return json.dumps(
         {
             "inline_keyboard": [
                 [
-                    {"text": "✅ Done", "callback_data": f"task:done:{task_id}"},
-                    {"text": "🔁 Rework", "callback_data": f"task:rework:{task_id}"},
-                    {"text": "✋ Block", "callback_data": f"task:block:{task_id}"},
+                    {"text": done, "callback_data": f"task:done:{task_id}"},
+                    {"text": rework, "callback_data": f"task:rework:{task_id}"},
+                    {"text": block, "callback_data": f"task:block:{task_id}"},
                 ]
             ]
         }

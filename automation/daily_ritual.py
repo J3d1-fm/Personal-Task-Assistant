@@ -89,53 +89,140 @@ def build_situation(tasks: list[dict], now: datetime) -> Situation:
     )
 
 
-def _line(task: dict) -> str:
-    due = (task.get("due_at") or "")[:10] or "no DD"
-    src = f" — from {task['source_name']}" if task.get("source_name") else ""
-    return f"- #{task['id']} [P{task['priority']}] {task['title']} ({task['assignee']}/{task['status']}, DD {due}){src}"
+STRINGS = {
+    "en": {
+        "title": "Daily task digest",
+        "counts": "{active} active · {overdue} overdue · {review} in review · {blocked} blocked · {triage} to triage · {agent} agent-ready",
+        "needs_you": "## Needs you",
+        "overdue": ("Overdue", "Nothing overdue. ✅"),
+        "review": ("Waiting for your review", "Nothing waiting on review."),
+        "blocked": ("Blocked — need your unblock", "Nothing blocked."),
+        "triage": ("Unassigned — need an owner", "Everything is routed."),
+        "due_soon": ("Due within 24h", "Nothing due in the next day."),
+        "agent_side": "## Agent side",
+        "agent_queue": ("Agent-ready queue", "Agent queue is empty."),
+        "no_work_run": "_Agent work loop was not run this cycle._",
+        "worked": "Worked this cycle",
+        "nothing_worked": "Nothing to work.",
+        "still_ready": ("Still agent-ready", "Agent queue is empty."),
+        "due": "DD",
+        "no_due": "no DD",
+        "from": "from",
+    },
+    "ru": {
+        "title": "Дневной дайджест задач",
+        "counts": "{active} активных · {overdue} просрочено · {review} на ревью · {blocked} заблокировано · {triage} без владельца · {agent} готовы для агента",
+        "needs_you": "## Нужен ты",
+        "overdue": ("Просрочено", "Ничего не просрочено. ✅"),
+        "review": ("Ждут твоего ревью", "Ничего не ждёт ревью."),
+        "blocked": ("Заблокировано — нужен твой разблок", "Ничего не заблокировано."),
+        "triage": ("Без владельца — нужно назначить", "Всё распределено."),
+        "due_soon": ("Дедлайн в ближайшие 24 часа", "В ближайшие сутки дедлайнов нет."),
+        "agent_side": "## Сторона агента",
+        "agent_queue": ("Очередь агента", "Очередь агента пуста."),
+        "no_work_run": "_Рабочий цикл агента в этот раз не запускался._",
+        "worked": "Сделано за цикл",
+        "nothing_worked": "Нечего было делать.",
+        "still_ready": ("Ещё в очереди агента", "Очередь агента пуста."),
+        "due": "срок",
+        "no_due": "без срока",
+        "from": "из",
+    },
+}
 
 
-def _section(title: str, tasks: list[dict], empty: str) -> list[str]:
+def assistant_lang() -> str:
+    return "ru" if os.getenv("ASSISTANT_LANG", "").strip().lower().startswith("ru") else "en"
+
+
+def _line(task: dict, t: dict) -> str:
+    due = (task.get("due_at") or "")[:10]
+    due_text = f"{t['due']} {due}" if due else t["no_due"]
+    src = f" — {t['from']} {task['source_name']}" if task.get("source_name") else ""
+    return f"- #{task['id']} [P{task['priority']}] {task['title']} ({task['assignee']}/{task['status']}, {due_text}){src}"
+
+
+def _section(pair: tuple[str, str], tasks: list[dict], t: dict) -> list[str]:
+    title, empty = pair
     if not tasks:
         return [f"### {title}", empty, ""]
-    return [f"### {title} ({len(tasks)})", *[_line(t) for t in tasks], ""]
+    return [f"### {title} ({len(tasks)})", *[_line(task, t) for task in tasks], ""]
 
 
-def render_digest(situation: Situation, worked: list[dict] | None = None) -> str:
+def render_digest(situation: Situation, worked: list[dict] | None = None, lang: str = "en") -> str:
     """Human-facing daily digest. Ordered by what needs the human first."""
     s = situation
+    t = STRINGS.get(lang, STRINGS["en"])
     lines = [
-        f"# Daily task digest — {s.now.astimezone().strftime('%Y-%m-%d %H:%M %Z')}",
+        f"# {t['title']} — {s.now.astimezone().strftime('%Y-%m-%d %H:%M %Z')}",
         "",
-        (
-            f"{s.total_active} active · {len(s.overdue)} overdue · {len(s.waiting_review)} in review · "
-            f"{len(s.blocked)} blocked · {len(s.needs_triage)} to triage · {len(s.agent_ready)} agent-ready"
+        t["counts"].format(
+            active=s.total_active,
+            overdue=len(s.overdue),
+            review=len(s.waiting_review),
+            blocked=len(s.blocked),
+            triage=len(s.needs_triage),
+            agent=len(s.agent_ready),
         ),
         "",
-        "## Needs you",
+        t["needs_you"],
         "",
     ]
-    lines += _section("Overdue", s.overdue, "Nothing overdue. ✅")
-    lines += _section("Waiting for your review", s.waiting_review, "Nothing waiting on review.")
-    lines += _section("Blocked — need your unblock", s.blocked, "Nothing blocked.")
-    lines += _section("Unassigned — need an owner", s.needs_triage, "Everything is routed.")
-    lines += _section("Due within 24h", s.due_soon, "Nothing due in the next day.")
+    lines += _section(t["overdue"], s.overdue, t)
+    lines += _section(t["review"], s.waiting_review, t)
+    lines += _section(t["blocked"], s.blocked, t)
+    lines += _section(t["triage"], s.needs_triage, t)
+    lines += _section(t["due_soon"], s.due_soon, t)
 
-    lines += ["## Agent side", ""]
+    lines += [t["agent_side"], ""]
     if worked is None:
-        lines += _section("Agent-ready queue", s.agent_ready, "Agent queue is empty.")
-        lines += ["_Agent work loop was not run this cycle._", ""]
+        lines += _section(t["agent_queue"], s.agent_ready, t)
+        lines += [t["no_work_run"], ""]
     else:
-        lines += [f"### Worked this cycle ({len(worked)})"]
-        lines += ([_line(t) + " → waiting_review" for t in worked] if worked else ["Nothing to work."])
-        lines += ["", *(_section("Still agent-ready", s.agent_ready, "Agent queue is empty.") if s.agent_ready else [])]
+        lines += [f"### {t['worked']} ({len(worked)})"]
+        lines += ([_line(task, t) + " → waiting_review" for task in worked] if worked else [t["nothing_worked"]])
+        lines += ["", *(_section(t["still_ready"], s.agent_ready, t) if s.agent_ready else [])]
     return "\n".join(lines).rstrip() + "\n"
 
 
-def render_spoken(situation: Situation, worked: list[dict] | None = None) -> str:
+def ru_plural(count: int, one: str, few: str, many: str) -> str:
+    """Russian plural agreement: 1 задача, 2-4 задачи, 5+ задач (teens -> many)."""
+    tail, teens = count % 10, count % 100
+    if tail == 1 and teens != 11:
+        return f"{count} {one}"
+    if tail in (2, 3, 4) and teens not in (12, 13, 14):
+        return f"{count} {few}"
+    return f"{count} {many}"
+
+
+def _render_spoken_ru(s: Situation, worked: list[dict] | None) -> str:
+    tasks_of = lambda items: ", ".join(t["title"] for t in items[:3])  # noqa: E731
+    sentences = [f"Привет. На доске {ru_plural(s.total_active, 'активная задача', 'активные задачи', 'активных задач')}."]
+    if s.overdue:
+        sentences.append(f"Просрочено: {len(s.overdue)}. В первую очередь: {tasks_of(s.overdue)}.")
+    else:
+        sentences.append("Просроченного ничего нет.")
+    if s.waiting_review:
+        sentences.append(f"Твоего ревью ждут: {tasks_of(s.waiting_review)}.")
+    if s.blocked:
+        sentences.append(f"Заблокировано и ждёт тебя: {len(s.blocked)}.")
+    if s.needs_triage:
+        sentences.append(f"Без владельца: {len(s.needs_triage)}.")
+    if s.due_soon:
+        sentences.append(f"Дедлайн в ближайшие сутки у {ru_plural(len(s.due_soon), 'задачи', 'задач', 'задач')}.")
+    if worked:
+        sentences.append(f"Агент отправил в ревью: {tasks_of(worked)}.")
+    elif s.agent_ready:
+        sentences.append(f"Для агента готово: {len(s.agent_ready)}.")
+    return " ".join(sentences)
+
+
+def render_spoken(situation: Situation, worked: list[dict] | None = None, lang: str = "en") -> str:
     """Short natural-language script for the voice digest — counts and the few
     hottest items by title, no ids or urls, comfortably under a minute."""
     s = situation
+    if lang == "ru":
+        return _render_spoken_ru(s, worked)
 
     def plural(count: int, noun: str) -> str:
         return f"{count} {noun}{'' if count == 1 else 's'}"
@@ -163,13 +250,13 @@ def render_spoken(situation: Situation, worked: list[dict] | None = None) -> str
     return " ".join(sentences)
 
 
-def notify_digest(digest: str, spoken: str, now: datetime) -> None:
+def notify_digest(digest: str, spoken: str, now: datetime, lang: str = "en") -> None:
     """Deliver the digest to Telegram when configured; never raises."""
     try:
-        from notify import load_notify_config, send_audio, send_message, synthesize_speech
+        from notify import load_notify_config, send_audio, send_message, synthesize_speech, voice_candidates
     except ImportError:
         sys.path.insert(0, str(ROOT / "automation"))
-        from notify import load_notify_config, send_audio, send_message, synthesize_speech
+        from notify import load_notify_config, send_audio, send_message, synthesize_speech, voice_candidates
 
     config = load_notify_config()
     if config is None:
@@ -178,8 +265,14 @@ def notify_digest(digest: str, spoken: str, now: datetime) -> None:
         print("digest sent to Telegram.")
     if config.voice_enabled:
         stamp = now.astimezone().strftime("%Y-%m-%d")
-        audio = synthesize_speech(spoken, LOG_DIR / f"digest-{stamp}.m4a", voice=config.voice_name)
-        if audio is not None and send_audio(config, audio, title=f"Board digest {stamp}"):
+        title = f"Дайджест доски {stamp}" if lang == "ru" else f"Board digest {stamp}"
+        audio = synthesize_speech(
+            spoken,
+            LOG_DIR / f"digest-{stamp}.m4a",
+            voices=voice_candidates(config.voice_name, lang),
+            rate=config.voice_rate,
+        )
+        if audio is not None and send_audio(config, audio, title=title):
             print("spoken digest sent to Telegram.")
 
 
@@ -236,12 +329,13 @@ def main() -> int:
         # Re-fetch so the digest reflects post-work state.
         situation = build_situation(fetch_board(args.url, args.api_key), now)
 
-    digest = render_digest(situation, worked=worked)
+    lang = assistant_lang()
+    digest = render_digest(situation, worked=worked, lang=lang)
     path = write_digest(digest, now)
     print(digest)
     print(f"\n(wrote {path})")
     if not args.no_notify:
-        notify_digest(digest, render_spoken(situation, worked=worked), now)
+        notify_digest(digest, render_spoken(situation, worked=worked, lang=lang), now, lang=lang)
     return 0
 
 

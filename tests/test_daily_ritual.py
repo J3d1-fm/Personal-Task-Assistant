@@ -137,15 +137,20 @@ def test_notify_digest_sends_text_and_voice(monkeypatch, tmp_path):
     monkeypatch.setattr(notify, "send_message", lambda _c, text, **k: sent.append(text) or True)
     monkeypatch.setattr(notify, "send_audio", lambda _c, path, title: audio_sent.append(path) or True)
 
-    def fake_synthesize(text, target, voice=None):
-        synthesized.append((text, voice))
+    def fake_synthesize(text, target, voices=(None,), rate=None):
+        synthesized.append((text, list(voices), rate))
         return tmp_path / "digest.m4a"
 
     monkeypatch.setattr(notify, "synthesize_speech", fake_synthesize)
     daily_ritual.notify_digest("the digest", "the spoken script", NOW)
     assert sent == ["the digest"]
-    assert synthesized == [("the spoken script", None)]
+    assert synthesized == [("the spoken script", [None], None)]
     assert audio_sent == [tmp_path / "digest.m4a"]
+
+    # Russian: prefers enhanced Milena, falls back to the built-in one.
+    synthesized.clear()
+    daily_ritual.notify_digest("дайджест", "устный дайджест", NOW, lang="ru")
+    assert synthesized == [("устный дайджест", ["Milena (Enhanced)", "Milena"], None)]
 
 
 def test_notify_digest_text_only_without_voice_flag(monkeypatch):
@@ -163,3 +168,38 @@ def test_notify_digest_text_only_without_voice_flag(monkeypatch):
     )
     daily_ritual.notify_digest("the digest", "spoken", NOW)
     assert sent == ["the digest"]
+
+
+def test_render_digest_and_spoken_in_russian():
+    import daily_ritual
+
+    tasks = [
+        _task(id=1, title="оплатить счёт", status="backlog", assignee="me", due_at="2020-01-01T00:00:00Z"),
+        _task(id=2, title="проверить дек", status="waiting_review", assignee="me"),
+        _task(id=3, status="backlog", assignee="codex"),
+    ]
+    s = build_situation(tasks, NOW)
+    digest = daily_ritual.render_digest(s, lang="ru")
+    assert "# Дневной дайджест задач" in digest
+    assert "## Нужен ты" in digest
+    assert "Ждут твоего ревью (1)" in digest
+    assert "готовы для агента" in digest
+    assert "_Рабочий цикл агента в этот раз не запускался._" in digest
+
+    spoken = daily_ritual.render_spoken(s, lang="ru")
+    assert spoken.startswith("Привет. На доске 3 активные задачи.")
+    assert "оплатить счёт" in spoken
+    assert "Твоего ревью ждут: проверить дек." in spoken
+    assert "Для агента готово: 1." in spoken
+
+
+def test_ru_plural_agreement():
+    import daily_ritual
+
+    forms = ("активная задача", "активные задачи", "активных задач")
+    assert daily_ritual.ru_plural(1, *forms) == "1 активная задача"
+    assert daily_ritual.ru_plural(3, *forms) == "3 активные задачи"
+    assert daily_ritual.ru_plural(5, *forms) == "5 активных задач"
+    assert daily_ritual.ru_plural(11, *forms) == "11 активных задач"
+    assert daily_ritual.ru_plural(22, *forms) == "22 активные задачи"
+    assert daily_ritual.ru_plural(114, *forms) == "114 активных задач"
