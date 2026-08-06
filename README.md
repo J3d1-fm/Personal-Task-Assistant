@@ -132,15 +132,33 @@ After changing the MCP tool surface, also run the agent evaluation process in
 measures whether an agent can operate the board through the MCP tools alone.
 See `evals/README.md`.
 
-## Daily Automation
+## Daily Automation And Reflexes
 
-`automation/` runs a once-a-day ritual (15:00 local via launchd) that checks
-the board and moves work forward without you starting it. It always writes a
-prioritized digest (overdue, waiting-your-review, blocked, unassigned, agent
-queue); with an opt-in agent work loop enabled, an agent also claims codex
-tasks and finishes them to `waiting_review` for your approval. Install with
-`automation/install.sh`; full details and the safety model are in
-`automation/README.md`.
+`automation/` gives the assistant a pulse and a voice:
+
+- **Daily ritual** (15:00 local): always writes a prioritized digest (overdue,
+  waiting-your-review, blocked, unassigned, agent queue); with the opt-in
+  agent work loop enabled, an agent also claims codex tasks and finishes them
+  to `waiting_review` for your approval.
+- **Telegram delivery**: with `TELEGRAM_BOT_TOKEN` and
+  `TELEGRAM_NOTIFY_CHAT_ID` set, the digest arrives as a Telegram message
+  instead of only landing in a log file — optionally with a spoken voice-note
+  version (`TELEGRAM_DIGEST_VOICE=1`, macOS).
+- **Watch loop** (`automation/watch.py`, opt-in): polls the board every ~30s
+  and reacts between rituals — pushes due reminders, announces tasks entering
+  `waiting_review` with inline ✅ Done / 🔁 Rework / ✋ Block buttons you can
+  press from your phone, and (with `WATCH_WORK=1`) kicks the agent work loop
+  the moment a task is assigned to it instead of waiting for 15:00.
+
+Button presses travel back through the Telegram polling adapter and update
+the task over the normal API — approving a review from your phone closes the
+human-in-the-loop cycle from anywhere. Closing a task remains exclusively a
+human action: agents still cannot set `done`; the ✅ button is your finger,
+not the agent's.
+
+Install with `automation/install.sh` (daily ritual) and
+`automation/install.sh --watch` (watch loop); full details and the safety
+model are in `automation/README.md`.
 
 ## Login And Auth
 

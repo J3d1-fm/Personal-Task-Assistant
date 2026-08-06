@@ -1,5 +1,81 @@
 Personal Task Assistant Changelog
 
+Version 0.9.0 - 2026-08-06
+
+The assistant gets a voice — Telegram delivery:
+- Added `automation/notify.py`, the single outbound Telegram module used by
+  the automation layer (the core app still never holds third-party
+  credentials or calls third-party services). Configured entirely by env:
+  `TELEGRAM_BOT_TOKEN` plus `TELEGRAM_NOTIFY_CHAT_ID`; unset means every
+  caller behaves exactly as before. Messages are chunked under Telegram's
+  4096-character limit at line boundaries, send failures return false instead
+  of raising so an outage can never break the ritual or the watch loop, and
+  the bot token is redacted from all logged errors.
+- The daily ritual now delivers the digest to your Telegram chat after
+  writing the dated file, and `--no-notify` skips delivery for manual runs.
+- Added a spoken digest: with `TELEGRAM_DIGEST_VOICE=1` the ritual renders a
+  short natural-language script (`render_spoken` — counts plus the hottest
+  items by title, no ids or urls) through macOS `say` + `afconvert` into an
+  AAC voice note and sends it with the text. On systems without those
+  binaries the voice step skips itself and the text digest still goes out.
+
+Reflexes — the watch loop:
+- Added `automation/watch.py`: an opt-in loop that polls the board every
+  `WATCH_INTERVAL` seconds (default 30) and reacts to what the once-a-day
+  ritual is too slow for. Due reminders are pushed to Telegram and
+  `reminder_last_sent_at` is stamped only after successful delivery, so the
+  tracker's existing debounce holds and a Telegram outage never silently
+  swallows a reminder; without Telegram configured nothing is stamped.
+- Tasks entering `waiting_review` are announced with inline ✅ Done /
+  🔁 Rework / ✋ Block buttons; which announcements were already made is
+  remembered in `automation/.watch_state.json`, and a task that leaves review
+  and re-enters it is announced again.
+- With `WATCH_WORK=1` (plus `ANTHROPIC_API_KEY`) the watch loop kicks the
+  same agent work loop the ritual uses as soon as agent-ready backlog
+  appears, capped by `WATCH_WORK_MAX_TASKS` per kick — a task assigned to
+  the agent is picked up within one interval instead of at 15:00. All
+  work-loop safety rails apply unchanged.
+- The loop presumes a running tracker and tolerates outages of the tracker
+  and Telegram alike: each tick logs and retries instead of crashing, so
+  KeepAlive supervisors never thrash.
+- Packaged the loop for real deployments: `automation/install.sh --watch`
+  installs a launchd KeepAlive job (macOS, `com.taskassistant.watch.plist` +
+  `watch_run.sh`) or a systemd user service (Linux), and docker-compose
+  gained an opt-in `watch` service behind the `watch` profile
+  (`docker compose --profile watch up -d`).
+
+Review buttons in the polling adapter:
+- The Telegram polling adapter — the bot's single `getUpdates` consumer —
+  now also handles `callback_query` updates from the review-request buttons.
+  A press from an allowed chat applies the human's decision over the normal
+  API (`PATCH /api/tasks/{id}`): ✅ sets `done`, 🔁 returns the task to
+  `in_progress`, ✋ sets `blocked`; the adapter answers the callback and
+  edits the original message so the outcome is visible in the chat. Closing
+  a task stays a human-only action — agents still cannot set `done`; the ✅
+  button is the human's finger arriving through Telegram.
+- Callback traffic is command traffic, not source content: it never touches
+  the ingestion-decision ledger or source-health scan counters, is ignored
+  from disallowed chats, reports unsupported callback data without touching
+  the tracker, and surfaces tracker failures as a callback alert instead of
+  editing the message. Documented in `docs/ADAPTER_CONTRACT.md` ("Out of
+  scope: command traffic").
+
+Housekeeping:
+- The agent work loop's default model moved from the retired
+  `claude-opus-4-8` to `claude-sonnet-5` (board meta-work does not need a
+  bigger tier); `DAILY_RITUAL_MODEL` still overrides it everywhere,
+  including docker-compose.
+- Added offline test coverage: notify chunking/buttons/redaction, watch
+  reminder-stamping and review-announcement invariants against a mock
+  tracker transport, adapter callback handling (allowed/disallowed chats,
+  unknown data, tracker failure), and the spoken digest + delivery hooks
+  (116 tests total).
+- Synchronized README, `automation/README.md`, `adapters/README.md`,
+  `adapters/telegram.env.example`, `docs/SELF_HOSTING.md`,
+  `docs/ADAPTER_CONTRACT.md`, and the daily-task-ritual skill with the new
+  surface.
+- Bumped the app version from 0.8.0 to 0.9.0.
+
 Version 0.8.0 - 2026-07-10
 
 Source health and proactive visibility:

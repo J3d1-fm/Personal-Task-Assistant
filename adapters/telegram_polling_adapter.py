@@ -30,6 +30,17 @@ TASK_PREFIX_RE = re.compile(
 DUE_RE = re.compile(r"\b(?:dd|due):(\d{4}-\d{2}-\d{2})\b", re.IGNORECASE)
 TELEGRAM_TOKEN_URL_RE = re.compile(r"(https://api\.telegram\.org/bot)[^/\s]+")
 
+# Inline-button actions on review requests sent by automation/notify.py. The
+# button press is the human's decision arriving through Telegram — this is the
+# one path in the adapter that may close a task, and it acts only on explicit
+# callback data from an allowed chat.
+CALLBACK_ACTION_RE = re.compile(r"^task:(done|rework|block):(\d+)$")
+CALLBACK_ACTIONS: dict[str, tuple[dict[str, str], str]] = {
+    "done": ({"status": "done"}, "✅ Approved — task closed."),
+    "rework": ({"status": "in_progress"}, "🔁 Sent back to in progress."),
+    "block": ({"status": "blocked"}, "✋ Blocked — add the reason in the tracker."),
+}
+
 
 @dataclass(frozen=True)
 class AdapterConfig:
@@ -192,7 +203,7 @@ def write_offset(path: Path, offset: int) -> None:
 def get_updates(config: AdapterConfig, offset: int | None) -> list[dict[str, Any]]:
     params: dict[str, Any] = {
         "timeout": config.poll_timeout,
-        "allowed_updates": json.dumps(["message", "edited_message"]),
+        "allowed_updates": json.dumps(["message", "edited_message", "callback_query"]),
     }
     if offset is not None:
         params["offset"] = offset
@@ -362,9 +373,10 @@ def build_ingest_payload(
     }
 
 
-def tracker_post(config: AdapterConfig, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+def _tracker_request(config: AdapterConfig, method: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
     try:
-        response = requests.post(
+        response = requests.request(
+            method,
             f"{config.task_tracker_url}{path}",
             headers={
                 "Authorization": f"Bearer {config.task_tracker_api_key}",
@@ -383,6 +395,14 @@ def tracker_post(config: AdapterConfig, path: str, payload: dict[str, Any]) -> d
         return dict(response.json())
     except ValueError as exc:
         raise TrackerRequestError(f"Task Assistant request to {path} returned invalid JSON") from exc
+
+
+def tracker_post(config: AdapterConfig, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return _tracker_request(config, "POST", path, payload)
+
+
+def tracker_patch(config: AdapterConfig, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return _tracker_request(config, "PATCH", path, payload)
 
 
 def post_to_task_assistant(config: AdapterConfig, payload: dict[str, Any]) -> dict[str, Any]:
@@ -469,8 +489,75 @@ def report_source_health(
     )
 
 
+def telegram_post(config: AdapterConfig, method: str, payload: dict[str, Any]) -> bool:
+    """Call the Telegram Bot API; sanitized failure never crashes the loop."""
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{config.telegram_bot_token}/{method}",
+            json=payload,
+            timeout=20,
+        )
+    except requests.RequestException as exc:
+        print(f"telegram {method} failed: {sanitize_error(exc, config)}", file=sys.stderr)
+        return False
+    if not response.ok:
+        detail = sanitize_error(response.text[:300], config)
+        print(f"telegram {method} failed with HTTP {response.status_code}: {detail}", file=sys.stderr)
+        return False
+    return True
+
+
+def parse_callback_action(data: str) -> tuple[str, int] | None:
+    match = CALLBACK_ACTION_RE.match(data or "")
+    if not match:
+        return None
+    return match.group(1), int(match.group(2))
+
+
+def handle_callback(config: AdapterConfig, callback: dict[str, Any]) -> None:
+    message = callback.get("message") or {}
+    if not message or not is_allowed_chat(config, message):
+        return
+    parsed = parse_callback_action(str(callback.get("data") or ""))
+    answer: dict[str, Any] = {"callback_query_id": callback.get("id")}
+    if parsed is None:
+        telegram_post(config, "answerCallbackQuery", {**answer, "text": "Unsupported action."})
+        return
+    action, task_id = parsed
+    payload, confirmation = CALLBACK_ACTIONS[action]
+    if config.dry_run:
+        print(f"dry-run: would PATCH /api/tasks/{task_id} with {json.dumps(payload)}")
+        return
+    try:
+        tracker_patch(config, f"/api/tasks/{task_id}", payload)
+    except TrackerRequestError as exc:
+        print(f"callback for task {task_id} failed: {exc}", file=sys.stderr)
+        telegram_post(
+            config,
+            "answerCallbackQuery",
+            {**answer, "text": f"Failed to update #{task_id} — see adapter logs.", "show_alert": True},
+        )
+        return
+    telegram_post(config, "answerCallbackQuery", {**answer, "text": f"#{task_id}: {confirmation}"})
+    original_text = str(message.get("text") or "")
+    if original_text and message.get("message_id"):
+        telegram_post(
+            config,
+            "editMessageText",
+            {
+                "chat_id": message["chat"]["id"],
+                "message_id": message["message_id"],
+                "text": f"{original_text}\n\n{confirmation}",
+            },
+        )
+
+
 def process_update(config: AdapterConfig, update: dict[str, Any]) -> RunMetrics:
     metrics = RunMetrics()
+    callback = update.get("callback_query")
+    if callback is not None:
+        handle_callback(config, callback)
+        return metrics
     message = update.get("message") or update.get("edited_message") or {}
     if not message or not is_allowed_chat(config, message):
         return metrics

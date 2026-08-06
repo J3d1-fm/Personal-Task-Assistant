@@ -154,3 +154,12 @@ the user fixes the token.
 
 Run `--dry-run` first. Dry runs print task payloads but do not write tasks,
 decisions, source health, or the Telegram offset.
+
+## Out of scope: command traffic
+
+Inline-button callbacks on review requests (sent by `automation/notify.py`,
+handled by the Telegram adapter) are command traffic, not source content: a
+button press from an allowed chat applies the human's decision to the task via
+`PATCH /api/tasks/{id}`. Command traffic never creates ingestion decisions,
+never counts toward source-health scan metrics, and needs no fingerprinting —
+the contract above applies only to reading items *from* a source.

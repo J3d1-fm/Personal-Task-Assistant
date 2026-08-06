@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MODEL = os.getenv("DAILY_RITUAL_MODEL", "claude-opus-4-8")
+DEFAULT_MODEL = os.getenv("DAILY_RITUAL_MODEL", "claude-sonnet-5")
 MAX_AGENT_TURNS = 60
 
 # Reuse the vendored MCP connection helper from the eval harness.

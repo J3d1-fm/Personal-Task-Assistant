@@ -1,6 +1,6 @@
 ---
 name: daily-task-ritual
-description: The once-a-day automation that checks the board and takes work into progress — how it is wired (launchd at 15:00 -> daily_ritual.py -> optional agent work loop), how to run, extend, or debug it, and the safety model. Use this whenever asked about the daily/scheduled run, the digest, "почему не сработала автоматизация", changing the schedule or what the agent may do unattended, or before editing anything under automation/.
+description: The automation layer — the once-a-day ritual (launchd at 15:00 -> daily_ritual.py -> optional agent work loop), Telegram delivery of the digest (text + optional macOS voice note via notify.py), and the continuous watch loop (watch.py — reminders, review requests with inline buttons, agent trigger). How each is wired, run, extended, debugged, and the safety model. Use this whenever asked about the daily/scheduled run, the digest, notifications/напоминания, review buttons, "почему не сработала автоматизация", changing the schedule or what the agent may do unattended, or before editing anything under automation/.
 ---
 
 # The daily task ritual
@@ -21,6 +21,21 @@ split, both in `automation/`:
    model ONLY the `task_assistant_*` MCP tools and the worker instructions,
    then it claims -> acts -> finishes tasks to `waiting_review`. What it did is
    folded back into the digest.
+
+Since 0.9.0 two more pieces live in `automation/`:
+
+3. **Outbound Telegram (`notify.py`)** — with `TELEGRAM_BOT_TOKEN` +
+   `TELEGRAM_NOTIFY_CHAT_ID` the ritual delivers the digest as a message
+   (plus a spoken voice note with `TELEGRAM_DIGEST_VOICE=1`, macOS
+   `say`/`afconvert` only). Send failures log and never break callers;
+   `--no-notify` skips delivery.
+4. **Watch loop (`watch.py`, opt-in, `install.sh --watch`)** — polls every
+   `WATCH_INTERVAL` (30s): pushes due reminders (stamps
+   `reminder_last_sent_at` only after delivery), announces `waiting_review`
+   entries with ✅/🔁/✋ inline buttons (presses are handled by the polling
+   adapter — the bot's single `getUpdates` consumer; never add a second one),
+   and with `WATCH_WORK=1` kicks the work loop when agent-ready backlog
+   appears. State in `automation/.watch_state.json`.
 
 ## Wiring
 
@@ -57,8 +72,8 @@ service. Self-hosting guide: `docs/SELF_HOSTING.md`.
   but keep the never-close-tasks and claim-budget rails in `_dispatch`.
 - **Digest content/order**: `build_situation` / `render_digest`; both are pure
   and covered by `tests/test_daily_ritual.py`.
-- **Model/cost**: `DAILY_RITUAL_MODEL` (default `claude-opus-4-8`; drop to a
-  cheaper tier for a routine loop).
+- **Model/cost**: `DAILY_RITUAL_MODEL` (default `claude-sonnet-5`; board
+  meta-work does not need a bigger tier).
 
 ## Debugging a missed or wrong run
 

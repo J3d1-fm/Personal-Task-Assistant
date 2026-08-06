@@ -11,7 +11,13 @@ item only when its content fingerprint changes or `revisit_after` expires.
 The repository includes two connectors:
 
 - `telegram_polling_adapter.py` reads Telegram Bot API updates and sends
-  normalized tasks to `POST /api/agent/ingest/context`.
+  normalized tasks to `POST /api/agent/ingest/context`. It also handles the
+  inline ✅ Done / 🔁 Rework / ✋ Block buttons on review requests that
+  `automation/notify.py` sends: a button press from an allowed chat is the
+  human's decision and is applied to the task with `PATCH /api/tasks/{id}`
+  (this is deliberately the one path through the adapter that may set a task
+  to `done` — a human pressed it). Callback traffic is bot-command traffic:
+  it never touches the ingestion ledger or source-health counters.
 - `task_assistant_mcp.py` exposes the JSON API as an MCP server so Claude Code,
   Claude Desktop, and other MCP clients can read the queue, claim work, and
   ingest context directly. See `docs/MCP.md`.

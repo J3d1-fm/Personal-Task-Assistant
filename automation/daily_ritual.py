@@ -132,6 +132,57 @@ def render_digest(situation: Situation, worked: list[dict] | None = None) -> str
     return "\n".join(lines).rstrip() + "\n"
 
 
+def render_spoken(situation: Situation, worked: list[dict] | None = None) -> str:
+    """Short natural-language script for the voice digest — counts and the few
+    hottest items by title, no ids or urls, comfortably under a minute."""
+    s = situation
+
+    def plural(count: int, noun: str) -> str:
+        return f"{count} {noun}{'' if count == 1 else 's'}"
+
+    sentences = [f"Here is your board. {plural(s.total_active, 'active task')}."]
+    if s.overdue:
+        titles = ", ".join(t["title"] for t in s.overdue[:3])
+        sentences.append(f"{plural(len(s.overdue), 'task')} overdue, starting with: {titles}.")
+    else:
+        sentences.append("Nothing is overdue.")
+    if s.waiting_review:
+        titles = ", ".join(t["title"] for t in s.waiting_review[:3])
+        sentences.append(f"Waiting for your review: {titles}.")
+    if s.blocked:
+        sentences.append(f"{plural(len(s.blocked), 'task')} blocked and waiting on you.")
+    if s.needs_triage:
+        sentences.append(f"{plural(len(s.needs_triage), 'task')} still need an owner.")
+    if s.due_soon:
+        sentences.append(f"{plural(len(s.due_soon), 'task')} due within a day.")
+    if worked:
+        titles = ", ".join(t["title"] for t in worked[:3])
+        sentences.append(f"The agent finished {plural(len(worked), 'task')} to review: {titles}.")
+    elif s.agent_ready:
+        sentences.append(f"{plural(len(s.agent_ready), 'task')} ready for the agent.")
+    return " ".join(sentences)
+
+
+def notify_digest(digest: str, spoken: str, now: datetime) -> None:
+    """Deliver the digest to Telegram when configured; never raises."""
+    try:
+        from notify import load_notify_config, send_audio, send_message, synthesize_speech
+    except ImportError:
+        sys.path.insert(0, str(ROOT / "automation"))
+        from notify import load_notify_config, send_audio, send_message, synthesize_speech
+
+    config = load_notify_config()
+    if config is None:
+        return
+    if send_message(config, digest):
+        print("digest sent to Telegram.")
+    if config.voice_enabled:
+        stamp = now.astimezone().strftime("%Y-%m-%d")
+        audio = synthesize_speech(spoken, LOG_DIR / f"digest-{stamp}.m4a", voice=config.voice_name)
+        if audio is not None and send_audio(config, audio, title=f"Board digest {stamp}"):
+            print("spoken digest sent to Telegram.")
+
+
 def fetch_board(url: str, api_key: str) -> list[dict]:
     headers = {"Authorization": f"Bearer {api_key}"}
     with httpx.Client(base_url=url.rstrip("/"), headers=headers, timeout=20.0) as client:
@@ -153,6 +204,7 @@ def main() -> int:
     parser.add_argument("--url", default=DEFAULT_URL, help="Task tracker base URL")
     parser.add_argument("--api-key", default=os.getenv("TASK_TRACKER_API_KEY", ""), help="Tracker API key")
     parser.add_argument("--no-work", action="store_true", help="Digest only; skip the agent work loop")
+    parser.add_argument("--no-notify", action="store_true", help="Skip Telegram delivery of the digest")
     parser.add_argument("--max-tasks", type=int, default=3, help="Max tasks the agent work loop may claim")
     parser.add_argument("--now", default=None, help="Override 'now' as ISO 8601 (testing)")
     args = parser.parse_args()
@@ -188,6 +240,8 @@ def main() -> int:
     path = write_digest(digest, now)
     print(digest)
     print(f"\n(wrote {path})")
+    if not args.no_notify:
+        notify_digest(digest, render_spoken(situation, worked=worked), now)
     return 0
 
 

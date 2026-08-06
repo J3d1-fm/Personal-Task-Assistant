@@ -278,3 +278,121 @@ def test_long_running_adapter_retries_transient_source_failure(monkeypatch):
         telegram_adapter.main()
     assert reports[0]["status"] == "rate_limited"
     assert sleeps[:2] == [90, 2]
+
+
+# ---------- review-request callback buttons ----------
+
+
+def test_parse_callback_action():
+    assert telegram_adapter.parse_callback_action("task:done:12") == ("done", 12)
+    assert telegram_adapter.parse_callback_action("task:rework:3") == ("rework", 3)
+    assert telegram_adapter.parse_callback_action("task:block:7") == ("block", 7)
+    assert telegram_adapter.parse_callback_action("task:delete:7") is None
+    assert telegram_adapter.parse_callback_action("garbage") is None
+    assert telegram_adapter.parse_callback_action("") is None
+
+
+def _callback(action="done", task_id=12, chat_id=1):
+    return {
+        "id": "cb-1",
+        "data": f"task:{action}:{task_id}",
+        "message": {
+            "message_id": 99,
+            "chat": {"id": chat_id},
+            "text": "👀 Review needed: #12 fix the export",
+        },
+    }
+
+
+def test_callback_done_patches_task_and_confirms(monkeypatch):
+    config = _config(dry_run=False)
+    patched = []
+    telegram_calls = []
+    monkeypatch.setattr(
+        telegram_adapter,
+        "tracker_patch",
+        lambda _config, path, payload: patched.append((path, payload)) or {},
+    )
+    monkeypatch.setattr(
+        telegram_adapter,
+        "telegram_post",
+        lambda _config, method, payload: telegram_calls.append((method, payload)) or True,
+    )
+    metrics = process_update(config, {"update_id": 1, "callback_query": _callback("done")})
+    assert patched == [("/api/tasks/12", {"status": "done"})]
+    assert metrics.items_checked == 0
+    methods = [method for method, _ in telegram_calls]
+    assert methods == ["answerCallbackQuery", "editMessageText"]
+    edit_payload = telegram_calls[1][1]
+    assert edit_payload["message_id"] == 99
+    assert "✅" in edit_payload["text"]
+
+
+def test_callback_rework_and_block_map_to_statuses(monkeypatch):
+    config = _config(dry_run=False)
+    patched = []
+    monkeypatch.setattr(
+        telegram_adapter,
+        "tracker_patch",
+        lambda _config, path, payload: patched.append((path, payload)) or {},
+    )
+    monkeypatch.setattr(telegram_adapter, "telegram_post", lambda *_args: True)
+    process_update(config, {"update_id": 1, "callback_query": _callback("rework", task_id=3)})
+    process_update(config, {"update_id": 2, "callback_query": _callback("block", task_id=7)})
+    assert patched == [
+        ("/api/tasks/3", {"status": "in_progress"}),
+        ("/api/tasks/7", {"status": "blocked"}),
+    ]
+
+
+def test_callback_from_disallowed_chat_is_ignored(monkeypatch):
+    config = _config(dry_run=False)
+    monkeypatch.setattr(
+        telegram_adapter,
+        "tracker_patch",
+        lambda *_args: pytest.fail("must not touch the tracker"),
+    )
+    monkeypatch.setattr(
+        telegram_adapter,
+        "telegram_post",
+        lambda *_args: pytest.fail("must not answer"),
+    )
+    process_update(config, {"update_id": 1, "callback_query": _callback(chat_id=666)})
+
+
+def test_callback_with_unknown_data_answers_without_patching(monkeypatch):
+    config = _config(dry_run=False)
+    answers = []
+    monkeypatch.setattr(
+        telegram_adapter,
+        "tracker_patch",
+        lambda *_args: pytest.fail("must not touch the tracker"),
+    )
+    monkeypatch.setattr(
+        telegram_adapter,
+        "telegram_post",
+        lambda _config, method, payload: answers.append((method, payload)) or True,
+    )
+    callback = _callback()
+    callback["data"] = "task:explode:12"
+    process_update(config, {"update_id": 1, "callback_query": callback})
+    assert answers[0][0] == "answerCallbackQuery"
+    assert "Unsupported" in answers[0][1]["text"]
+
+
+def test_callback_tracker_failure_alerts_without_editing(monkeypatch):
+    config = _config(dry_run=False)
+    telegram_calls = []
+
+    def failing_patch(*_args):
+        raise telegram_adapter.TrackerRequestError("HTTP 404")
+
+    monkeypatch.setattr(telegram_adapter, "tracker_patch", failing_patch)
+    monkeypatch.setattr(
+        telegram_adapter,
+        "telegram_post",
+        lambda _config, method, payload: telegram_calls.append((method, payload)) or True,
+    )
+    process_update(config, {"update_id": 1, "callback_query": _callback()})
+    assert [method for method, _ in telegram_calls] == ["answerCallbackQuery"]
+    assert telegram_calls[0][1]["show_alert"] is True

@@ -85,3 +85,81 @@ def test_empty_board_is_all_clear():
     text = render_digest(build_situation([], NOW))
     assert "0 active" in text
     assert "Nothing overdue" in text
+
+
+# ---------- spoken digest + Telegram delivery ----------
+
+
+def test_render_spoken_covers_the_hot_items():
+    import daily_ritual
+
+    tasks = [
+        _task(id=1, title="pay the invoice", status="backlog", assignee="me", due_at="2020-01-01T00:00:00Z"),
+        _task(id=2, title="check the deck", status="waiting_review", assignee="me"),
+        _task(id=3, status="backlog", assignee="codex"),
+    ]
+    spoken = daily_ritual.render_spoken(build_situation(tasks, NOW))
+    assert "3 active tasks" in spoken
+    assert "pay the invoice" in spoken
+    assert "check the deck" in spoken
+    assert "1 task ready for the agent." in spoken
+
+
+def test_render_spoken_empty_board_and_worked():
+    import daily_ritual
+
+    spoken = daily_ritual.render_spoken(build_situation([], NOW))
+    assert "Nothing is overdue." in spoken
+    worked = [_task(id=9, title="sorted inbox")]
+    spoken = daily_ritual.render_spoken(build_situation([], NOW), worked=worked)
+    assert "The agent finished 1 task to review: sorted inbox." in spoken
+
+
+def test_notify_digest_noop_when_unconfigured(monkeypatch):
+    import daily_ritual
+    import notify
+
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_NOTIFY_CHAT_ID", raising=False)
+    monkeypatch.setattr(
+        notify, "send_message", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not send"))
+    )
+    daily_ritual.notify_digest("digest", "spoken", NOW)
+
+
+def test_notify_digest_sends_text_and_voice(monkeypatch, tmp_path):
+    import daily_ritual
+    import notify
+
+    config = notify.NotifyConfig(bot_token="t", chat_id="1", voice_enabled=True)
+    sent, audio_sent, synthesized = [], [], []
+    monkeypatch.setattr(notify, "load_notify_config", lambda: config)
+    monkeypatch.setattr(notify, "send_message", lambda _c, text, **k: sent.append(text) or True)
+    monkeypatch.setattr(notify, "send_audio", lambda _c, path, title: audio_sent.append(path) or True)
+
+    def fake_synthesize(text, target, voice=None):
+        synthesized.append((text, voice))
+        return tmp_path / "digest.m4a"
+
+    monkeypatch.setattr(notify, "synthesize_speech", fake_synthesize)
+    daily_ritual.notify_digest("the digest", "the spoken script", NOW)
+    assert sent == ["the digest"]
+    assert synthesized == [("the spoken script", None)]
+    assert audio_sent == [tmp_path / "digest.m4a"]
+
+
+def test_notify_digest_text_only_without_voice_flag(monkeypatch):
+    import daily_ritual
+    import notify
+
+    config = notify.NotifyConfig(bot_token="t", chat_id="1", voice_enabled=False)
+    sent = []
+    monkeypatch.setattr(notify, "load_notify_config", lambda: config)
+    monkeypatch.setattr(notify, "send_message", lambda _c, text, **k: sent.append(text) or True)
+    monkeypatch.setattr(
+        notify,
+        "synthesize_speech",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("voice must not run")),
+    )
+    daily_ritual.notify_digest("the digest", "spoken", NOW)
+    assert sent == ["the digest"]

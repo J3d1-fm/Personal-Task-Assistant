@@ -42,7 +42,36 @@ services:
       RITUAL_ARGS: ${RITUAL_ARGS:-}
       DAILY_RITUAL_WORK: ${DAILY_RITUAL_WORK:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      DAILY_RITUAL_MODEL: ${DAILY_RITUAL_MODEL:-claude-opus-4-8}
+      DAILY_RITUAL_MODEL: ${DAILY_RITUAL_MODEL:-claude-sonnet-5}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_NOTIFY_CHAT_ID: ${TELEGRAM_NOTIFY_CHAT_ID:-}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ritual-logs:/app/automation/logs
+    healthcheck:
+      disable: true
+
+  # Reflex loop: reminders, review requests, agent trigger. Opt-in:
+  #   docker compose --profile watch up -d
+  watch:
+    build: .
+    restart: unless-stopped
+    profiles: ["watch"]
+    command: ["python", "automation/watch.py"]
+    depends_on:
+      tracker:
+        condition: service_healthy
+    environment:
+      TASK_TRACKER_URL: http://tracker:8080
+      TASK_TRACKER_API_KEY: ${TASK_TRACKER_API_KEY:?set it in .env}
+      WATCH_INTERVAL: ${WATCH_INTERVAL:-30}
+      WATCH_WORK: ${WATCH_WORK:-}
+      WATCH_WORK_MAX_TASKS: ${WATCH_WORK_MAX_TASKS:-3}
+      WATCH_STATE: /app/automation/logs/.watch_state.json
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DAILY_RITUAL_MODEL: ${DAILY_RITUAL_MODEL:-claude-sonnet-5}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_NOTIFY_CHAT_ID: ${TELEGRAM_NOTIFY_CHAT_ID:-}
       TZ: ${TZ:-UTC}
     volumes:
       - ritual-logs:/app/automation/logs

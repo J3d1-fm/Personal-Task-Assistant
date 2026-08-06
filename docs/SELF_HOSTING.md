@@ -32,7 +32,23 @@ You get two services:
 - **ritual** — the daily worker: at `RITUAL_TIME` (default 15:00) it writes a
   prioritized digest of your board; with `DAILY_RITUAL_WORK=1` and an
   `ANTHROPIC_API_KEY` in `.env` it also works the codex queue through the MCP
-  server and reports what it moved to review.
+  server and reports what it moved to review. With `TELEGRAM_BOT_TOKEN` and
+  `TELEGRAM_NOTIFY_CHAT_ID` in `.env` the digest is also delivered to your
+  Telegram chat (the spoken voice note is macOS-only and skips itself in
+  Docker).
+
+A third, opt-in service adds the reflexes:
+
+```bash
+docker compose --profile watch up -d
+```
+
+- **watch** — polls the board every `WATCH_INTERVAL` seconds (default 30):
+  pushes due reminders to Telegram, announces tasks entering `waiting_review`
+  with inline ✅/🔁/✋ buttons (presses are handled by the Telegram polling
+  adapter), and with `WATCH_WORK=1` kicks the agent work loop as soon as a
+  task is assigned to the agent. See `automation/README.md` for the safety
+  model.
 
 Read the digest:
 
