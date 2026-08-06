@@ -9,6 +9,7 @@
 # credential errors by design; the supervisor's KeepAlive restarts it after
 # transient failures.
 set -euo pipefail
+export PYTHONUNBUFFERED=1
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"

@@ -1,5 +1,18 @@
 Personal Task Assistant Changelog
 
+Version 0.11.1 - 2026-08-06
+
+- daily_run.sh now honors a remote TASK_TRACKER_URL from .env (a hosted
+  Cloud Run instance): it health-checks the remote and runs the ritual
+  against it instead of unconditionally starting and pointing at a local
+  tracker — the local-lifecycle logic now applies only to the loopback
+  default. Found while switching this stack from a fresh local instance to
+  the real hosted board.
+- The automation entrypoints (daily_run.sh, watch_run.sh, telegram_run.sh)
+  export PYTHONUNBUFFERED=1 so watch/adapter activity lines appear in the
+  launchd/systemd logs immediately instead of sitting in a block buffer.
+- Bumped the app version from 0.11.0 to 0.11.1.
+
 Version 0.11.0 - 2026-08-06
 
 The assistant speaks your language:

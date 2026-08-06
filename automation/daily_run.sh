@@ -8,6 +8,7 @@
 # and — to enable the agent work loop — DAILY_RITUAL_WORK=1 plus
 # ANTHROPIC_API_KEY).
 set -euo pipefail
+export PYTHONUNBUFFERED=1
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
@@ -31,6 +32,24 @@ fi
 # flags — sourcing it as bash would break on unquoted values with spaces.
 . "$REPO/automation/env.sh"
 load_env "$REPO/.env"
+
+# A remote TASK_TRACKER_URL from .env (hosted instance) wins; the local
+# tracker lifecycle below only applies to the loopback default.
+if [[ -n "${TASK_TRACKER_URL:-}" && "$TASK_TRACKER_URL" != http://127.0.0.1:* && "$TASK_TRACKER_URL" != http://localhost:* ]]; then
+  URL="$TASK_TRACKER_URL"
+  log "Using remote tracker at $URL."
+  if ! curl -fsS -m 10 "$URL/readyz" >/dev/null 2>&1; then
+    log "ERROR: remote tracker at $URL is not reachable; aborting."
+    exit 3
+  fi
+  log "Running the daily ritual."
+  set +e
+  "$VENV_PY" "$REPO/automation/daily_ritual.py" "$@" >>"$RUN_LOG" 2>&1
+  status=$?
+  set -e
+  log "Daily ritual finished with status $status. Digest in $LOG_DIR/digest-${STAMP}.md"
+  exit "$status"
+fi
 export TASK_TRACKER_URL="$URL"
 
 started_tracker=0

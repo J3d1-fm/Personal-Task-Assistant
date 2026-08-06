@@ -8,6 +8,7 @@
 # Telegram delivery TELEGRAM_BOT_TOKEN + TELEGRAM_NOTIFY_CHAT_ID; for the
 # agent trigger WATCH_WORK=1 plus ANTHROPIC_API_KEY).
 set -euo pipefail
+export PYTHONUNBUFFERED=1
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
