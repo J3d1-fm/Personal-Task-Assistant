@@ -427,7 +427,12 @@ def is_reminder_due(task: TaskRead, current: datetime) -> bool:
     if task.reminder_last_sent_at is None:
         return True
     reminder_last_sent_at = normalize_datetime(task.reminder_last_sent_at)
-    return any(reminder_last_sent_at < target for target in targets)
+    # Only targets that have ALREADY PASSED count for re-firing. A future
+    # target must not re-arm the reminder the moment one is sent — a task
+    # with a past reminder_at and a future due_at would otherwise stay "due"
+    # forever, resending on every poll until the future date arrives. The
+    # future target fires on its own once it passes (last_sent < target <= now).
+    return any(reminder_last_sent_at < target <= current for target in targets)
 
 
 def normalize_datetime(value: datetime) -> datetime:

@@ -56,3 +56,32 @@ def test_due_reminders_endpoint(client, api_headers, make_task):
         "/api/reminders/due", params={"now": "2036-01-01T00:00:00Z"}, headers=api_headers
     ).json()
     assert {task["title"] for task in shifted} == {"overdue", "future"}
+
+
+def test_future_target_does_not_rearm_after_send():
+    """Regression: past reminder_at + future due_at must NOT stay due after
+    the reminder is sent — it resent on every poll until the future date."""
+    task = _task(
+        reminder_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        due_at=datetime(2026, 8, 20, tzinfo=timezone.utc),
+        reminder_last_sent_at=NOW,
+    )
+    assert not is_reminder_due(task, NOW)
+    # ...but once the future due date passes, it fires exactly once more.
+    after_due = datetime(2026, 8, 21, tzinfo=timezone.utc)
+    assert is_reminder_due(task, after_due)
+    task_resent = _task(
+        reminder_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        due_at=datetime(2026, 8, 20, tzinfo=timezone.utc),
+        reminder_last_sent_at=after_due,
+    )
+    assert not is_reminder_due(task_resent, after_due)
+
+
+def test_past_target_newer_than_last_send_still_fires():
+    task = _task(
+        reminder_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        due_at=datetime(2026, 7, 3, tzinfo=timezone.utc),
+        reminder_last_sent_at=datetime(2026, 7, 2, tzinfo=timezone.utc),
+    )
+    assert is_reminder_due(task, NOW)

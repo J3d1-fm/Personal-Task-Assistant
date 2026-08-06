@@ -1,5 +1,19 @@
 Personal Task Assistant Changelog
 
+Version 0.11.2 - 2026-08-06
+
+- Fixed reminders re-firing on every poll for tasks with one target in the
+  past and another in the future (e.g. a past reminder_at plus a future
+  due_at): `is_reminder_due` re-armed the moment a reminder was stamped,
+  because a future target always compared newer than the last send. With a
+  30-second watch loop this repeated the same Telegram reminder endlessly —
+  caught live within an hour of the loop watching a real board. A target
+  now counts for re-firing only once it has actually passed
+  (last_sent < target <= now), so each target fires exactly once and a
+  future due date still produces its own reminder when it arrives. Added
+  regression tests for both behaviors.
+- Bumped the app version from 0.11.1 to 0.11.2.
+
 Version 0.11.1 - 2026-08-06
 
 - daily_run.sh now honors a remote TASK_TRACKER_URL from .env (a hosted
