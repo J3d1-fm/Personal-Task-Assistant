@@ -27,10 +27,10 @@ if [[ ! -x "$VENV_PY" ]]; then
   exit 1
 fi
 
-# Load .env (export every assignment) so the ritual sees the API key and flags.
-if [[ -f "$REPO/.env" ]]; then
-  set -a; . "$REPO/.env"; set +a
-fi
+# Load .env safely (parsed, not executed) so the ritual sees the API key and
+# flags — sourcing it as bash would break on unquoted values with spaces.
+. "$REPO/automation/env.sh"
+load_env "$REPO/.env"
 export TASK_TRACKER_URL="$URL"
 
 started_tracker=0

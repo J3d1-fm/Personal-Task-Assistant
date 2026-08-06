@@ -1,5 +1,27 @@
 Personal Task Assistant Changelog
 
+Version 0.9.1 - 2026-08-06
+
+- Fixed the automation entrypoints crashing on wizard-generated .env files:
+  `daily_run.sh` (since 0.6.0) and `watch_run.sh` sourced .env as bash, so an
+  unquoted value with a space — the setup wizard wrote
+  `APP_NAME=Personal Task Assistant` — became a command invocation and killed
+  the runner under `set -euo pipefail` (the watch loop then crash-looped
+  under launchd KeepAlive). Caught during the first real installation of the
+  automation stack; it never fired before because no wizard-generated .env
+  had ever met the schedulers on the same machine.
+- Added `automation/env.sh`, a safe loader that parses KEY=VALUE lines
+  without executing anything: comments, blank lines, and non-assignment
+  lines are skipped, one layer of surrounding quotes is stripped (matching
+  python-dotenv), and CR is trimmed. Both entrypoints now use it.
+- The setup wizard quotes values containing spaces (`APP_NAME`,
+  `TASK_HISTORY_SHEET_TAB`) so its .env is shell-safe by construction;
+  python-dotenv reads the quoted form identically.
+- Added `tests/test_env_loader.py`: loader behavior on spaces, quotes,
+  comments, CRLF, missing files, and a wizard-output equivalence check
+  between the bash loader and python-dotenv (119 tests total).
+- Bumped the app version from 0.9.0 to 0.9.1.
+
 Version 0.9.0 - 2026-08-06
 
 The assistant gets a voice — Telegram delivery:

@@ -21,10 +21,9 @@ if [[ ! -x "$VENV_PY" ]]; then
   exit 1
 fi
 
-# Load .env (export every assignment) so the loop sees keys and flags.
-if [[ -f "$REPO/.env" ]]; then
-  set -a; . "$REPO/.env"; set +a
-fi
+# Load .env safely (parsed, not executed) so the loop sees keys and flags.
+. "$REPO/automation/env.sh"
+load_env "$REPO/.env"
 export TASK_TRACKER_URL="${TASK_TRACKER_URL:-http://127.0.0.1:${PORT}}"
 
 exec "$VENV_PY" "$REPO/automation/watch.py" "$@"

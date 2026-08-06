@@ -106,7 +106,9 @@ def write_env_file() -> None:
         [
             "DATABASE_URL=sqlite:///./task_tracker.db",
             f"TASK_TRACKER_API_KEY={api_key}",
-            "APP_NAME=Personal Task Assistant",
+            # Values with spaces are quoted so shell entrypoints that parse
+            # .env stay safe; python-dotenv strips the quotes on read.
+            'APP_NAME="Personal Task Assistant"',
             f"PUBLIC_BASE_URL={APP_URL}",
             "TASK_STORE=sqlite",
             f"SESSION_SECRET_KEY={session_secret}",
@@ -115,7 +117,7 @@ def write_env_file() -> None:
             "GOOGLE_OAUTH_CLIENT_SECRET=",
             "ALLOWED_GOOGLE_EMAILS=local@example.com",
             "TASK_HISTORY_SHEET_ID=",
-            "TASK_HISTORY_SHEET_TAB=Task History",
+            'TASK_HISTORY_SHEET_TAB="Task History"',
             "",
         ]
     )
