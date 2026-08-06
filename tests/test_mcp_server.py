@@ -156,3 +156,62 @@ def test_missing_api_key_is_actionable(monkeypatch):
     monkeypatch.delenv("TASK_TRACKER_API_KEY", raising=False)
     result = run(mcp_mod.task_assistant_queue_summary(mcp_mod.EmptyInput()))
     assert "TASK_TRACKER_API_KEY is not configured" in result
+
+
+# ---------- worker-mode rails (enforced in the server, not the prompt) ----------
+
+
+def test_worker_mode_refuses_done_and_cancelled(monkeypatch):
+    monkeypatch.setenv("TASK_MCP_WORKER_MODE", "1")
+    created = json.loads(
+        run(mcp_mod.task_assistant_create_task(mcp_mod.CreateTaskInput(title="rail check", assignee="codex")))
+    )
+    for status in ("done", "cancelled"):
+        answer = run(
+            mcp_mod.task_assistant_update_task(
+                mcp_mod.UpdateTaskInput(task_id=created["id"], status=status)
+            )
+        )
+        assert answer.startswith("Refused"), answer
+        assert "finish_task" in answer
+    # Non-terminal transitions stay allowed, and finish_task is untouched.
+    blocked = json.loads(
+        run(mcp_mod.task_assistant_update_task(mcp_mod.UpdateTaskInput(task_id=created["id"], status="blocked")))
+    )
+    assert blocked["status"] == "blocked"
+    finished = json.loads(run(mcp_mod.task_assistant_finish_task(mcp_mod.TaskIdInput(task_id=created["id"]))))
+    assert finished["status"] == "waiting_review"
+
+
+def test_without_worker_mode_done_still_works(monkeypatch):
+    monkeypatch.delenv("TASK_MCP_WORKER_MODE", raising=False)
+    created = json.loads(
+        run(mcp_mod.task_assistant_create_task(mcp_mod.CreateTaskInput(title="human closes", assignee="me")))
+    )
+    updated = json.loads(
+        run(mcp_mod.task_assistant_update_task(mcp_mod.UpdateTaskInput(task_id=created["id"], status="done")))
+    )
+    assert updated["status"] == "done"
+
+
+def test_worker_mode_claim_budget(monkeypatch):
+    monkeypatch.setenv("TASK_MCP_WORKER_MODE", "1")
+    monkeypatch.setenv("TASK_MCP_CLAIM_BUDGET", "1")
+    monkeypatch.setattr(mcp_mod, "_claims_made", 0)
+    for title in ("first claimable", "second claimable"):
+        run(mcp_mod.task_assistant_create_task(mcp_mod.CreateTaskInput(title=title, assignee="codex")))
+
+    first = run(mcp_mod.task_assistant_claim_task(mcp_mod.EmptyInput()))
+    assert json.loads(first)["status"] == "in_progress"
+    second = run(mcp_mod.task_assistant_claim_task(mcp_mod.EmptyInput()))
+    assert second.startswith("Claim budget reached"), second
+    assert "finish" in second
+
+
+def test_claim_budget_ignored_outside_worker_mode(monkeypatch):
+    monkeypatch.delenv("TASK_MCP_WORKER_MODE", raising=False)
+    monkeypatch.setenv("TASK_MCP_CLAIM_BUDGET", "0")
+    monkeypatch.setattr(mcp_mod, "_claims_made", 0)
+    run(mcp_mod.task_assistant_create_task(mcp_mod.CreateTaskInput(title="free claim", assignee="codex")))
+    answer = run(mcp_mod.task_assistant_claim_task(mcp_mod.EmptyInput()))
+    assert json.loads(answer)["status"] == "in_progress"

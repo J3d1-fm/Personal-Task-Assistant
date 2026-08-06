@@ -185,14 +185,16 @@ def tick(
             client.close()
 
     if config.work_enabled and agent_backlog(tasks):
-        if not os.getenv("ANTHROPIC_API_KEY"):
-            if not state.get("work_key_warned"):
-                print("WATCH_WORK is on but ANTHROPIC_API_KEY is not set; skipping.", file=sys.stderr)
-                state["work_key_warned"] = True
-        else:
-            from work_loop import run_work_loop
+        from work_runner import backend_ready, run_work
 
-            worked = run_work_loop(config.url, config.api_key, max_tasks=config.work_max_tasks)
+        ready, reason = backend_ready()
+        if not ready:
+            if not state.get("work_warned"):
+                print(f"WATCH_WORK is on but {reason}", file=sys.stderr)
+                state["work_warned"] = True
+        else:
+            state.pop("work_warned", None)
+            worked = run_work(config.url, config.api_key, max_tasks=config.work_max_tasks)
             for task in worked:
                 print(f"agent finished #{task.get('id')} {task.get('title')} → waiting_review")
     return state

@@ -35,6 +35,24 @@ TASK_TRACKER_URL=http://127.0.0.1:8000   # default
 TASK_TRACKER_API_KEY=<the instance API key>  # required
 ```
 
+### Worker mode (rails for unattended runs)
+
+For autonomous runs the safety rails live in the server itself, in code, so
+they hold no matter which agent drives the tools:
+
+```bash
+TASK_MCP_WORKER_MODE=1     # enable the rails
+TASK_MCP_CLAIM_BUDGET=3    # max successful claims this server process hands out
+```
+
+With worker mode on, `task_assistant_update_task` refuses `status="done"` and
+`status="cancelled"` (closing a task is the human's decision — the agent's
+terminal state is `waiting_review` via `task_assistant_finish_task`), and
+`task_assistant_claim_task` refuses further claims once the budget is spent,
+telling the agent to finish what it holds and stop. The local work runner
+(`automation/claude_work.py`) sets both automatically; leave them unset for
+interactive use.
+
 Install dependencies (the `mcp` package is part of `requirements.txt`):
 
 ```bash

@@ -139,7 +139,11 @@ See `evals/README.md`.
 - **Daily ritual** (15:00 local): always writes a prioritized digest (overdue,
   waiting-your-review, blocked, unassigned, agent queue); with the opt-in
   agent work loop enabled, an agent also claims codex tasks and finishes them
-  to `waiting_review` for your approval.
+  to `waiting_review` for your approval. The agent can run entirely locally
+  through a headless Claude Code session on your existing subscription
+  (`WORK_RUNNER=claude` — no API key, no per-token billing) or over the
+  Anthropic API; either way the safety rails are enforced in the MCP server
+  itself (worker mode: never closes tasks, claim budget).
 - **Telegram delivery**: with `TELEGRAM_BOT_TOKEN` and
   `TELEGRAM_NOTIFY_CHAT_ID` set, the digest arrives as a Telegram message
   instead of only landing in a log file — optionally with a spoken voice-note

@@ -43,6 +43,11 @@ A third, opt-in service adds the reflexes:
 docker compose --profile watch up -d
 ```
 
+Note: the local no-API-billing work runner (`WORK_RUNNER=claude`, headless
+Claude Code) applies to native installs only — the Docker image ships no
+Claude Code CLI, so containers use the Anthropic-API loop
+(`ANTHROPIC_API_KEY`).
+
 - **watch** — polls the board every `WATCH_INTERVAL` seconds (default 30):
   pushes due reminders to Telegram, announces tasks entering `waiting_review`
   with inline ✅/🔁/✋ buttons (presses are handled by the Telegram polling

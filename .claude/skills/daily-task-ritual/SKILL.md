@@ -16,11 +16,16 @@ split, both in `automation/`:
    waiting-review, blocked, unassigned-to-triage, due-soon, then the agent
    side. This is the guaranteed daily deliverable — the human always gets "here
    is your board today" even if the agent layer is off or fails.
-2. **Agent work loop (`automation/work_loop.py`, opt-in)** — only if
-   `DAILY_RITUAL_WORK` is set and an `ANTHROPIC_API_KEY` is present. Gives a
-   model ONLY the `task_assistant_*` MCP tools and the worker instructions,
-   then it claims -> acts -> finishes tasks to `waiting_review`. What it did is
-   folded back into the digest.
+2. **Agent work loop (opt-in, `DAILY_RITUAL_WORK=1`)** — gives a model ONLY
+   the `task_assistant_*` MCP tools and the worker instructions, then it
+   claims -> acts -> finishes tasks to `waiting_review`. What it did is folded
+   back into the digest. `WORK_RUNNER` picks the backend
+   (`automation/work_runner.py`): `claude` = headless Claude Code CLI on the
+   user's subscription (no API key; needs `claude /login` once and
+   `WORK_CLAUDE_BIN` for launchd), `api`/unset = the Anthropic-API loop in
+   `work_loop.py` (needs `ANTHROPIC_API_KEY`). Both run behind the SAME rails,
+   enforced in the MCP server's worker mode (`TASK_MCP_WORKER_MODE`,
+   `TASK_MCP_CLAIM_BUDGET` — refuses done/cancelled, caps claims).
 
 Since 0.9.0 two more pieces live in `automation/`:
 

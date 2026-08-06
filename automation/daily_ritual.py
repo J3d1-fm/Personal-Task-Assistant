@@ -228,11 +228,11 @@ def main() -> int:
     work_enabled = not args.no_work and os.getenv("DAILY_RITUAL_WORK", "").lower() in ("1", "true", "yes", "on")
     if work_enabled:
         try:
-            from work_loop import run_work_loop  # local import: only needed when enabled
+            from work_runner import run_work  # local import: only needed when enabled
         except ImportError:
             sys.path.insert(0, str(ROOT / "automation"))
-            from work_loop import run_work_loop
-        worked = run_work_loop(args.url, args.api_key, max_tasks=args.max_tasks)
+            from work_runner import run_work
+        worked = run_work(args.url, args.api_key, max_tasks=args.max_tasks)
         # Re-fetch so the digest reflects post-work state.
         situation = build_situation(fetch_board(args.url, args.api_key), now)
 

@@ -43,7 +43,28 @@ starts a temporary instance for the run and stops it afterward.
 ## Enable the agent work loop
 
 The digest alone is safe and needs no API key. To let the agent actually take
-tasks into review, add to `.env`:
+tasks into review, enable the work leg and pick how the model is paid for
+(`WORK_RUNNER`):
+
+**Local, no API billing (recommended when Claude Code is installed):** the
+loop runs through a headless Claude Code session on your existing
+subscription — no ANTHROPIC_API_KEY at all.
+
+```bash
+DAILY_RITUAL_WORK=1
+WORK_RUNNER=claude
+WORK_CLAUDE_BIN=/absolute/path/to/claude   # `which claude`; launchd has a minimal PATH
+# optional: WORK_MODEL=...    # --model override; unset uses the CLI default
+# optional: WORK_TIMEOUT=900  # seconds before the session is cut off
+```
+
+The session is isolated in code: it gets ONLY the task-assistant MCP server
+(`--strict-mcp-config`) with only its tools approved — no shell, repo, or web
+— and the MCP server itself runs in worker mode (refuses done/cancelled,
+enforces the claim budget; see docs/MCP.md "Worker mode"). Requires a
+one-time `claude /login` under the same user.
+
+**Anthropic API (the 0.6.0 path):**
 
 ```bash
 DAILY_RITUAL_WORK=1
@@ -102,10 +123,11 @@ once-a-day pulse is too slow for:
   (the bot's single `getUpdates` consumer) and update the task over the API.
   The ✅ button is the human deciding — agents themselves still cannot close
   tasks.
-- **New agent-ready backlog** (opt-in `WATCH_WORK=1` + `ANTHROPIC_API_KEY`) →
-  kicks the same work loop as the ritual, so a task assigned to the agent is
-  picked up within one interval instead of at 15:00. All work-loop rails
-  apply unchanged; `WATCH_WORK_MAX_TASKS` caps each kick.
+- **New agent-ready backlog** (opt-in `WATCH_WORK=1`) → kicks the same work
+  loop as the ritual, so a task assigned to the agent is picked up within one
+  interval instead of at 15:00. The backend follows `WORK_RUNNER` (local
+  Claude Code or the Anthropic API — see "Enable the agent work loop"); all
+  work-loop rails apply unchanged; `WATCH_WORK_MAX_TASKS` caps each kick.
 
 ```bash
 automation/install.sh --watch            # launchd KeepAlive (macOS) / systemd
@@ -124,7 +146,9 @@ Env knobs: `WATCH_INTERVAL` (seconds, min 5), `WATCH_STATE` (state path).
 | File | Role |
 | --- | --- |
 | `daily_ritual.py` | Deterministic driver: health check, situation, digest, spoken script |
-| `work_loop.py` | Opt-in agent loop over MCP with the safety rails |
+| `work_loop.py` | Agent loop over the Anthropic API (WORK_RUNNER=api) |
+| `claude_work.py` | Agent loop through headless Claude Code — subscription, no API key |
+| `work_runner.py` | Backend selector (`WORK_RUNNER`) shared by ritual and watch |
 | `notify.py` | Outbound Telegram: chunked messages, voice notes, review buttons |
 | `watch.py` | Reflex loop: reminders, review requests, agent trigger |
 | `daily_run.sh` | Scheduler entrypoint: tracker lifecycle + logging |
@@ -142,6 +166,7 @@ Edit `StartCalendarInterval` in `com.taskassistant.daily.plist` and re-run
 and 18:00).
 
 Tests: `tests/test_daily_ritual.py` (digest + spoken script + delivery),
-`tests/test_work_loop.py` (safety rails), `tests/test_notify.py` (chunking,
-buttons, redaction), `tests/test_watch.py` (reminder stamping, review
-announcements) — all offline, no API keys needed.
+`tests/test_work_loop.py` (API-loop safety rails), `tests/test_work_runner.py`
+(backend selection + headless isolation flags), `tests/test_notify.py`
+(chunking, buttons, redaction), `tests/test_watch.py` (reminder stamping,
+review announcements, work gating) — all offline, no API keys needed.

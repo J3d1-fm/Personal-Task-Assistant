@@ -1,5 +1,53 @@
 Personal Task Assistant Changelog
 
+Version 0.10.0 - 2026-08-06
+
+Local work runner — the agent leg with no API billing:
+- Added `automation/claude_work.py`: the claim -> work -> finish-to-review
+  loop can now run through a headless Claude Code CLI session (`claude -p`)
+  on the user's existing subscription instead of the metered Anthropic API.
+  No ANTHROPIC_API_KEY is involved; a one-time `claude /login` under the
+  same user is the only prerequisite.
+- The headless session is isolated in code, not by prompt: it receives ONLY
+  the task-assistant MCP server (`--strict-mcp-config` ignores every other
+  configured server), only that server's tools are approved
+  (`--allowed-tools "mcp__task-assistant"` — unapproved tools are denied in
+  print mode, so no shell, repo, or web), it runs in a throwaway empty
+  working directory so no project context leaks in, and the session is cut
+  off after `WORK_TIMEOUT` seconds (default 900). Tasks moved to review are
+  detected by diffing board snapshots taken before and after the run, so
+  even a timed-out session reports exactly what it finished.
+- Added `automation/work_runner.py`, the backend selector shared by the
+  daily ritual and the watch loop: `WORK_RUNNER=claude` (also
+  `claude-code`/`local`) picks the headless CLI, `api` or unset keeps the
+  0.6.0 Anthropic-API loop. Both backends return the same worked-task shape,
+  so digests and watch logs render identically. `WORK_CLAUDE_BIN` pins the
+  CLI path for launchd's minimal PATH; `WORK_MODEL` optionally overrides the
+  model. The watch loop now pre-flights the selected backend and warns once
+  with the exact missing piece instead of spamming every tick.
+
+Worker-mode rails in the MCP server:
+- The safety rails for unattended runs moved into the MCP server itself, so
+  they hold for ANY agent driving the tools — API loop, headless Claude
+  Code, or a future runner. With `TASK_MCP_WORKER_MODE=1`,
+  `task_assistant_update_task` refuses status done and cancelled (closing a
+  task stays the human's decision; the agent's terminal state is
+  waiting_review via finish_task), and `task_assistant_claim_task` enforces
+  `TASK_MCP_CLAIM_BUDGET`: once the process has handed out that many
+  successful claims, further claims are refused with a stop instruction.
+- Default (non-worker) behavior is unchanged for interactive MCP use; the
+  local runner sets both variables automatically. The deterministic
+  evaluation gate (evals/verify_answers.py --write-loop) passes against the
+  updated server; the eval board was re-seeded afterwards.
+- Added integration tests for the rails (done/cancelled refusal, claim
+  budget, non-worker passthrough) plus offline tests for backend selection,
+  the headless command's isolation flags, the worker-mode MCP config, board
+  diffing, and watch-loop work gating (132 tests total).
+- Synchronized README, automation/README.md, docs/MCP.md ("Worker mode"),
+  docs/SELF_HOSTING.md (the Docker image has no Claude Code CLI — containers
+  keep using the API loop), and the daily-task-ritual skill.
+- Bumped the app version from 0.9.1 to 0.10.0.
+
 Version 0.9.1 - 2026-08-06
 
 - Fixed the automation entrypoints crashing on wizard-generated .env files:

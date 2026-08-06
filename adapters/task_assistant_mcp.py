@@ -8,6 +8,13 @@ update tasks, and ingest context without a custom adapter.
 Configuration (environment variables):
 - TASK_TRACKER_URL: base URL of a running instance (default http://127.0.0.1:8000)
 - TASK_TRACKER_API_KEY: the instance API key (required)
+- TASK_MCP_WORKER_MODE: "1" puts the server in unattended-worker mode — the
+  safety rails for autonomous runs are enforced here, in code, regardless of
+  which agent drives the tools: update_task refuses status done/cancelled
+  (closing a task is the human's decision; the terminal agent state is
+  waiting_review via finish_task) and claim_task honors the claim budget.
+- TASK_MCP_CLAIM_BUDGET: with worker mode, max successful claims this server
+  process will hand out; further claims are refused with a stop instruction.
 
 Run directly or register with an MCP client:
     python3 adapters/task_assistant_mcp.py
@@ -214,6 +221,23 @@ class EmptyInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+_claims_made = 0  # process-local successful-claim counter for worker mode
+
+
+def _worker_mode() -> bool:
+    return os.getenv("TASK_MCP_WORKER_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _claim_budget() -> int | None:
+    raw = os.getenv("TASK_MCP_CLAIM_BUDGET", "").strip()
+    if not raw:
+        return None
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return None
+
+
 def _client() -> httpx.AsyncClient:
     api_key = os.getenv("TASK_TRACKER_API_KEY", "").strip()
     if not api_key or api_key == "change-me":
@@ -406,6 +430,13 @@ async def task_assistant_claim_task(params: EmptyInput) -> str:
         due_at, source fields), or "No claimable task..." when the codex
         backlog is empty — that is a normal outcome, not an error.
     """
+    global _claims_made
+    budget = _claim_budget()
+    if _worker_mode() and budget is not None and _claims_made >= budget:
+        return (
+            f"Claim budget reached ({budget} task(s) this run). Do not claim more; "
+            "finish any task you are holding with task_assistant_finish_task and stop."
+        )
     try:
         task = await _request("POST", "/api/agent/claim")
     except httpx.HTTPStatusError as exc:
@@ -417,6 +448,7 @@ async def task_assistant_claim_task(params: EmptyInput) -> str:
         return _error_text(exc)
     except Exception as exc:
         return _error_text(exc)
+    _claims_made += 1
     return _task_json(task)
 
 
@@ -521,6 +553,12 @@ async def task_assistant_update_task(params: UpdateTaskInput) -> str:
     updates.pop("task_id", None)
     if not updates:
         return "Error: No fields to update. Provide at least one of title, description, status, assignee, priority, due_at, reminder_at."
+    if _worker_mode() and updates.get("status") in {"done", "cancelled"}:
+        return (
+            "Refused: in worker mode only the human may close or cancel a task. "
+            "Use task_assistant_finish_task to send it to waiting_review, or set "
+            'status="blocked" with the reason in the description.'
+        )
     try:
         task = await _request("PATCH", f"/api/tasks/{params.task_id}", body=updates)
     except Exception as exc:

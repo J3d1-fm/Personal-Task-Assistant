@@ -152,3 +152,51 @@ def test_tick_without_notify_leaves_reminders_unstamped(tmp_path):
     with _mock_tracker([reminder], [reminder], patches) as client:
         tick(_watch_config(tmp_path, notify=None), {"review_notified": {}}, client=client)
     assert patches == []
+
+
+def test_tick_triggers_work_backend_when_ready(monkeypatch, tmp_path):
+    import work_runner
+
+    backlog_task = _task(4, assignee="codex", status="backlog")
+    calls = []
+    monkeypatch.setattr(work_runner, "backend_ready", lambda: (True, ""))
+    monkeypatch.setattr(
+        work_runner, "run_work", lambda url, key, max_tasks: calls.append((url, max_tasks)) or []
+    )
+    config = WatchConfig(
+        url="http://tracker.test",
+        api_key="key",
+        interval=30,
+        state_path=tmp_path / "state.json",
+        work_enabled=True,
+        work_max_tasks=2,
+        notify=None,
+    )
+    with _mock_tracker([backlog_task], [], []) as client:
+        tick(config, {"review_notified": {}}, client=client)
+    assert calls == [("http://tracker.test", 2)]
+
+
+def test_tick_warns_once_when_backend_not_ready(monkeypatch, tmp_path, capsys):
+    import work_runner
+
+    backlog_task = _task(4, assignee="codex", status="backlog")
+    monkeypatch.setattr(work_runner, "backend_ready", lambda: (False, "no backend"))
+    monkeypatch.setattr(
+        work_runner, "run_work", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run"))
+    )
+    config = WatchConfig(
+        url="http://tracker.test",
+        api_key="key",
+        interval=30,
+        state_path=tmp_path / "state.json",
+        work_enabled=True,
+        work_max_tasks=2,
+        notify=None,
+    )
+    state = {"review_notified": {}}
+    with _mock_tracker([backlog_task], [], []) as client:
+        state = tick(config, state, client=client)
+        state = tick(config, state, client=client)
+    assert capsys.readouterr().err.count("no backend") == 1
+    assert state["work_warned"] is True
