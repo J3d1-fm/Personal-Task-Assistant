@@ -1,5 +1,18 @@
 Personal Task Assistant Changelog
 
+Version 0.13.1 - 2026-08-07
+
+- Fixed a stale 0.12.0-era voice test that broke CI on 0.13.0: written for
+  the stub reply, it survived locally only by accident — with ffmpeg on
+  PATH the adapter proceeded past availability, made a real (failing)
+  network call to Telegram, and the resulting error text happened to match
+  the assertion; on CI, with no ffmpeg, the new "STT not available" answer
+  did not. The test now pins STT availability explicitly, asserts the
+  honest unavailability answer (with the reason) in both languages, and
+  verifies no download is attempted and the ledger is untouched — fully
+  deterministic in any environment, no network.
+- Bumped the app version from 0.13.0 to 0.13.1.
+
 Version 0.13.0 - 2026-08-07
 
 Voice messages, transcribed on-device:

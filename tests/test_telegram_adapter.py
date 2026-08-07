@@ -507,13 +507,21 @@ def test_reply_to_missing_task_answers_not_found(monkeypatch):
     assert "не найдена" in sent[0]["text"] or "not found" in sent[0]["text"]
 
 
-def test_voice_message_gets_stub_answer_without_ledger(monkeypatch):
+def test_voice_message_without_stt_answers_honestly_and_skips_ledger(monkeypatch):
+    import speech_to_text
+
     config = _config(dry_run=False, bot_id=123456)
     sent = []
+    monkeypatch.setattr(speech_to_text, "available", lambda: (False, "ffmpeg not found"))
     monkeypatch.setattr(
         telegram_adapter,
         "should_process_item",
         lambda *_a: pytest.fail("voice must not hit the ledger"),
+    )
+    monkeypatch.setattr(
+        telegram_adapter,
+        "telegram_file_path",
+        lambda *_a: pytest.fail("must not download when STT is unavailable"),
     )
     monkeypatch.setattr(
         telegram_adapter, "telegram_post", lambda _c, m, payload: sent.append(payload) or True
@@ -521,7 +529,8 @@ def test_voice_message_gets_stub_answer_without_ledger(monkeypatch):
     message = {"message_id": 7, "chat": {"id": 1}, "voice": {"file_id": "x", "duration": 3}}
     metrics = process_update(config, {"update_id": 1, "message": message})
     assert metrics.items_checked == 0
-    assert sent and ("Голосовые" in sent[0]["text"] or "voice" in sent[0]["text"])
+    assert sent and "ffmpeg not found" in sent[0]["text"]
+    assert "недоступна" in sent[0]["text"] or "not available" in sent[0]["text"]
 
 
 # ---------- voice messages (local STT) ----------
