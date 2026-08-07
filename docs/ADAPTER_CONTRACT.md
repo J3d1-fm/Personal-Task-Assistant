@@ -171,9 +171,13 @@ before the ingest/ledger path:
   with a localized confirmation.
 - **Voice messages** (voice notes and video notes): transcribed on-device
   (ffmpeg + whisper), then routed like text — a voice reply becomes a reply
-  command on the referenced task; a standalone voice note creates one task
-  from the transcript via `POST /api/agent/tasks`. The transcript is echoed
-  back so the human sees exactly what was heard. Voice traffic bypasses the
+  command on the referenced task; a transcript that asks a question (a
+  question word plus a task number, or plus a board word) is answered with
+  text and a locally synthesized voice bubble instead of creating anything;
+  any other standalone voice note creates one task from the transcript via
+  `POST /api/agent/tasks`. The transcript is echoed back so the human sees
+  exactly what was heard. The audio never persists (temp dirs only); the
+  transcript is appended to a weekly local log. Voice traffic bypasses the
   fingerprint ledger: a Telegram voice message cannot be edited, so the
   update offset alone prevents reprocessing.
 

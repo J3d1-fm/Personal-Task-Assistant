@@ -16,7 +16,7 @@ import re
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from datetime import time as datetime_time
 from pathlib import Path
 from typing import Any
@@ -99,6 +99,134 @@ REPLY_MESSAGES: dict[str, dict[str, str]] = {
 }
 
 VOICE_MAX_SECONDS = int(os.getenv("VOICE_MAX_SECONDS", "600"))
+ADAPTER_ROOT = Path(__file__).resolve().parents[1]
+
+# Free-form voice/text that ASKS about the board is answered, not turned into
+# a task. Deliberately narrow: a question word plus an explicit task number,
+# or a question word plus a board/summary word.
+QUERY_WORDS_RE = re.compile(
+    r"\b(какая|какой|каком|которая|что|статус|расскажи|покажи|ответь|скажи|what|status|tell)\b",
+    re.IGNORECASE,
+)
+QUERY_TASK_NUM_RE = re.compile(r"(?:задач\w*(?:\s+под)?|таск\w*|номер\w*|№|#)\s*(\d+)", re.IGNORECASE)
+SUMMARY_WORDS_RE = re.compile(r"\b(сводк\w*|дайджест\w*|доск\w*|саммари|summary|board)\b", re.IGNORECASE)
+
+STATUS_SPOKEN = {
+    "ru": {
+        "backlog": "в бэклоге",
+        "in_progress": "в работе",
+        "waiting_review": "ждёт твоего ревью",
+        "blocked": "заблокирована",
+        "done": "закрыта",
+        "cancelled": "отменена",
+    },
+    "en": {
+        "backlog": "in the backlog",
+        "in_progress": "in progress",
+        "waiting_review": "waiting for your review",
+        "blocked": "blocked",
+        "done": "done",
+        "cancelled": "cancelled",
+    },
+}
+ASSIGNEE_SPOKEN = {
+    "ru": {"me": "владелец — ты", "codex": "владелец — агент", "unassigned": "без владельца"},
+    "en": {"me": "owned by you", "codex": "owned by the agent", "unassigned": "unassigned"},
+}
+
+
+def detect_voice_intent(transcript: str) -> tuple[str, int | None]:
+    """-> ("task_query", N) | ("summary", None) | ("create", None)."""
+    if QUERY_WORDS_RE.search(transcript):
+        match = QUERY_TASK_NUM_RE.search(transcript)
+        if match:
+            return "task_query", int(match.group(1))
+        if SUMMARY_WORDS_RE.search(transcript):
+            return "summary", None
+    return "create", None
+
+
+def compose_task_answer(task: dict[str, Any], lang: str) -> str:
+    status = STATUS_SPOKEN[lang].get(str(task.get("status")), str(task.get("status")))
+    assignee = ASSIGNEE_SPOKEN[lang].get(str(task.get("assignee")), str(task.get("assignee")))
+    due = (task.get("due_at") or "")[:10]
+    if lang == "ru":
+        parts = [
+            f"Задача {task['id']}: «{task['title']}».",
+            f"Статус: {status}, {assignee}, приоритет P{task['priority']}.",
+            f"Срок: {due}." if due else "Срок не задан.",
+        ]
+    else:
+        parts = [
+            f"Task {task['id']}: “{task['title']}”.",
+            f"Status: {status}, {assignee}, priority P{task['priority']}.",
+            f"Due {due}." if due else "No due date.",
+        ]
+    return " ".join(parts)
+
+
+def compose_summary_answer(summary: dict[str, Any], lang: str) -> str:
+    if lang == "ru":
+        return (
+            f"На доске {summary.get('active', 0)} активных задач. "
+            f"Просрочено: {summary.get('overdue', 0)}. На ревью: {summary.get('review', 0)}. "
+            f"Заблокировано: {summary.get('blocked', 0)}. Готово для агента: {summary.get('codex_ready', 0)}."
+        )
+    return (
+        f"The board has {summary.get('active', 0)} active tasks. "
+        f"Overdue: {summary.get('overdue', 0)}. In review: {summary.get('review', 0)}. "
+        f"Blocked: {summary.get('blocked', 0)}. Agent-ready: {summary.get('codex_ready', 0)}."
+    )
+
+
+def transcript_log_path(now: datetime | None = None) -> Path:
+    """Weekly transcript file: voice-transcripts-<monday>_<sunday>.txt."""
+    current = (now or datetime.now(timezone.utc)).astimezone()
+    monday = current.date() - timedelta(days=current.weekday())
+    sunday = monday + timedelta(days=6)
+    directory = Path(os.getenv("VOICE_TRANSCRIPT_DIR", "") or ADAPTER_ROOT / "automation" / "logs")
+    return directory / f"voice-transcripts-{monday.isoformat()}_{sunday.isoformat()}.txt"
+
+
+def log_transcript(outcome: str, transcript: str, now: datetime | None = None) -> None:
+    """Append the transcript to the weekly log; the audio itself never
+    persists (temp dirs only), the text is the only trace kept."""
+    current = (now or datetime.now(timezone.utc)).astimezone()
+    path = transcript_log_path(current)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(f"[{current.strftime('%Y-%m-%d %H:%M')}] {outcome}: {transcript}\n")
+    except OSError as exc:
+        print(f"transcript log failed: {exc}", file=sys.stderr)
+
+
+def send_voice_answer(config: AdapterConfig, message: dict[str, Any], text: str, *, spoken: str | None = None) -> None:
+    """Text answer plus, when local TTS is available, a voice-bubble answer.
+    `spoken` narrows what is voiced (e.g. the answer without the echo)."""
+    send_reply(config, message, text)
+    import tempfile
+
+    import speech_to_text
+
+    if not speech_to_text.tts_available():
+        return
+    with tempfile.TemporaryDirectory(prefix="pta-answer-") as workdir:
+        ogg = speech_to_text.synthesize_voice(spoken or text, Path(workdir) / "answer.ogg", lang=assistant_lang())
+        if ogg is None:
+            return
+        try:
+            with ogg.open("rb") as handle:
+                response = requests.post(
+                    f"https://api.telegram.org/bot{config.telegram_bot_token}/sendVoice",
+                    data={"chat_id": message["chat"]["id"], "reply_to_message_id": message.get("message_id")},
+                    files={"voice": ("answer.ogg", handle, "audio/ogg")},
+                    timeout=60,
+                )
+            if not response.ok:
+                print(f"sendVoice failed with HTTP {response.status_code}", file=sys.stderr)
+        except (requests.RequestException, OSError) as exc:
+            print(f"sendVoice failed: {sanitize_error(exc, config)}", file=sys.stderr)
 
 
 def assistant_lang() -> str:
@@ -768,8 +896,37 @@ def handle_voice_message(config: AdapterConfig, message: dict[str, Any]) -> None
 
     reply_command = parse_reply_command(message, config.bot_id)
     if reply_command is not None:
+        log_transcript(f"reply #{reply_command[0]}", transcript)
         handle_reply_command(config, message, reply_command[0], transcript, echo=True)
         return
+
+    intent, task_number = detect_voice_intent(transcript)
+    if intent == "task_query":
+        log_transcript(f"query #{task_number}", transcript)
+        try:
+            task = tracker_get(config, f"/api/tasks/{task_number}")
+        except TrackerRequestError as exc:
+            if "404" in str(exc):
+                send_reply(config, message, REPLY_MESSAGES["not_found"][lang].format(task_id=task_number))
+            else:
+                print(f"voice query for task {task_number} failed: {exc}", file=sys.stderr)
+                send_reply(config, message, REPLY_MESSAGES["voice_failed"][lang])
+            return
+        answer = compose_task_answer(task, lang)
+        send_voice_answer(config, message, f"🎙 «{transcript}»\n\n{answer}", spoken=answer)
+        return
+    if intent == "summary":
+        log_transcript("query summary", transcript)
+        try:
+            summary = tracker_get(config, "/api/agent/queue/summary")
+        except TrackerRequestError as exc:
+            print(f"voice summary query failed: {exc}", file=sys.stderr)
+            send_reply(config, message, REPLY_MESSAGES["voice_failed"][lang])
+            return
+        answer = compose_summary_answer(summary, lang)
+        send_voice_answer(config, message, f"🎙 «{transcript}»\n\n{answer}", spoken=answer)
+        return
+
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
     title = voice_task_title(transcript)
     try:
@@ -789,6 +946,7 @@ def handle_voice_message(config: AdapterConfig, message: dict[str, Any]) -> None
         print(f"voice task creation failed: {exc}", file=sys.stderr)
         send_reply(config, message, REPLY_MESSAGES["voice_failed"][lang])
         return
+    log_transcript(f"created #{task.get('id')}", transcript)
     send_reply(
         config,
         message,

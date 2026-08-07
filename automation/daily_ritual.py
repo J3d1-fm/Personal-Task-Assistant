@@ -274,6 +274,7 @@ def notify_digest(digest: str, spoken: str, now: datetime, lang: str = "en") -> 
         )
         if audio is not None and send_audio(config, audio, title=title):
             print("spoken digest sent to Telegram.")
+            audio.unlink(missing_ok=True)  # delivered — keep no audio around
 
 
 def fetch_board(url: str, api_key: str) -> list[dict]:

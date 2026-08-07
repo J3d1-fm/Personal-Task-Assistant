@@ -68,3 +68,45 @@ def test_transcribe_returns_none_on_failure(monkeypatch, tmp_path):
     audio = tmp_path / "voice.oga"
     audio.write_bytes(b"fake")
     assert speech_to_text.transcribe(audio) is None
+
+
+def test_synthesize_voice_prefers_piper_and_outputs_ogg(monkeypatch, tmp_path):
+    piper = tmp_path / "piper"
+    piper.write_text("#!/bin/sh\n")
+    piper.chmod(0o755)
+    model = tmp_path / "voice.onnx"
+    model.write_bytes(b"model")
+    monkeypatch.setenv("PIPER_BIN", str(piper))
+    monkeypatch.setenv("PIPER_MODEL", str(model))
+    monkeypatch.delenv("FFMPEG_BIN", raising=False)
+    monkeypatch.setattr(speech_to_text.shutil, "which", lambda name: f"/usr/bin/{name}")
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(speech_to_text.subprocess, "run", fake_run)
+    target = tmp_path / "answer.ogg"
+    assert speech_to_text.synthesize_voice("привет", target) == target
+    assert calls[0][0] == str(piper)
+    assert "-m" in calls[0] and str(model) in calls[0]
+    assert "libopus" in calls[1]
+
+
+def test_synthesize_voice_falls_back_to_say(monkeypatch, tmp_path):
+    monkeypatch.delenv("PIPER_BIN", raising=False)
+    monkeypatch.delenv("PIPER_MODEL", raising=False)
+    monkeypatch.delenv("FFMPEG_BIN", raising=False)
+    monkeypatch.delenv("TTS_SAY_VOICE", raising=False)
+    monkeypatch.setattr(speech_to_text.shutil, "which", lambda name: f"/usr/bin/{name}")
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(speech_to_text.subprocess, "run", fake_run)
+    assert speech_to_text.synthesize_voice("привет", tmp_path / "a.ogg", lang="ru") is not None
+    assert calls[0][0].endswith("say")
+    assert "Milena" in calls[0]

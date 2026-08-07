@@ -647,3 +647,69 @@ def test_voice_task_title_cuts_at_word_boundary():
     assert len(title) <= 121
     assert title.endswith("…")
     assert not title[:-1].endswith(" ")
+
+
+# ---------- voice queries, weekly transcript log ----------
+
+
+def test_detect_voice_intent():
+    detect = telegram_adapter.detect_voice_intent
+    assert detect("Ответь мне, какая сейчас задача под номером 1 и какой по ней статус?") == ("task_query", 1)
+    assert detect("Какой статус у задачи 158?") == ("task_query", 158)
+    assert detect("Что по таску номер 42") == ("task_query", 42)
+    assert detect("Расскажи, что на доске?") == ("summary", None)
+    assert detect("Покажи сводку") == ("summary", None)
+    assert detect("Добавь задачу купить пять билетов на поезд") == ("create", None)
+    assert detect("Проверить оплату в Google Play") == ("create", None)
+
+
+def test_compose_task_answer_russian():
+    task = {"id": 1, "title": "Проверить оплату", "status": "waiting_review", "assignee": "me", "priority": 2, "due_at": "2026-08-09T18:00:00Z"}
+    answer = telegram_adapter.compose_task_answer(task, "ru")
+    assert "Задача 1" in answer and "Проверить оплату" in answer
+    assert "ждёт твоего ревью" in answer and "P2" in answer and "2026-08-09" in answer
+
+
+def test_voice_query_answers_with_task_status(monkeypatch):
+    monkeypatch.setenv("ASSISTANT_LANG", "ru")
+    config = _config(dry_run=False, bot_id=123456)
+    sent, voiced = [], []
+    _wire_voice(monkeypatch, transcript="Какая задача под номером 1 и какой статус?")
+    monkeypatch.setattr(
+        telegram_adapter,
+        "tracker_get",
+        lambda _c, path: {"id": 1, "title": "Чеклист запуска", "status": "backlog", "assignee": "codex", "priority": 2, "due_at": None},
+    )
+    monkeypatch.setattr(
+        telegram_adapter, "tracker_post", lambda *_a: pytest.fail("query must not create tasks")
+    )
+    monkeypatch.setattr(
+        telegram_adapter, "telegram_post", lambda _c, m, payload: sent.append(payload) or True
+    )
+    monkeypatch.setattr(
+        telegram_adapter,
+        "send_voice_answer",
+        lambda _c, _m, text, spoken=None: voiced.append((text, spoken)),
+    )
+    monkeypatch.setattr(telegram_adapter, "log_transcript", lambda *a, **k: None)
+    process_update(config, {"update_id": 1, "message": _voice_message()})
+    text, spoken = voiced[0]
+    assert "🎙" in text and "Чеклист запуска" in text
+    assert spoken.startswith("Задача 1") and "🎙" not in spoken
+
+
+def test_weekly_transcript_log_naming_and_append(monkeypatch, tmp_path):
+    from datetime import datetime, timezone
+
+    monkeypatch.setenv("VOICE_TRANSCRIPT_DIR", str(tmp_path))
+    wednesday = datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc)
+    path = telegram_adapter.transcript_log_path(wednesday)
+    assert path.name == "voice-transcripts-2026-08-03_2026-08-09.txt"
+    telegram_adapter.log_transcript("created #301", "проверить оплату", now=wednesday)
+    telegram_adapter.log_transcript("query #1", "какой статус", now=wednesday)
+    content = path.read_text(encoding="utf-8")
+    assert content.count("\n") == 2
+    assert "created #301: проверить оплату" in content
+    # Next week goes to a new file.
+    next_monday = datetime(2026, 8, 10, 9, 0, tzinfo=timezone.utc)
+    assert telegram_adapter.transcript_log_path(next_monday).name == "voice-transcripts-2026-08-10_2026-08-16.txt"

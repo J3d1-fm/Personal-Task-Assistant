@@ -26,13 +26,21 @@ The repository includes two connectors:
   **Voice messages** are transcribed locally (`speech_to_text.py`: ffmpeg +
   a whisper CLI, no cloud, no API keys) and then behave like text: a voice
   reply to a task message acts on that task (first transcribed word picks
-  the action), a standalone voice note creates a task titled from the
-  transcript. The bot always echoes what it heard («🎙 …»), so mishearings
-  are visible and correctable. Configure `FFMPEG_BIN`/`WHISPER_BIN` with
-  absolute paths (supervisors have a minimal PATH), `WHISPER_MODEL=small`
-  or better for non-English speech; when STT is not available the bot says
-  so instead of staying silent. Command traffic never touches the ingestion
-  ledger or source-health counters.
+  the action); a **question** («какой статус задачи 158?», «что на доске?»)
+  gets an answer — text plus a voice bubble synthesized locally (Piper
+  neural voice via `PIPER_BIN`/`PIPER_MODEL`, falling back to macOS `say`);
+  anything else creates a task titled from the transcript. The bot always
+  echoes what it heard («🎙 …»), so mishearings are visible and correctable.
+
+  Privacy: the audio itself never persists — downloads and synthesis
+  intermediates live in temp dirs wiped immediately; the only trace kept is
+  the transcript, appended to a weekly text log
+  (`automation/logs/voice-transcripts-<monday>_<sunday>.txt`,
+  `VOICE_TRANSCRIPT_DIR` to relocate). Configure `FFMPEG_BIN`/`WHISPER_BIN`
+  with absolute paths (supervisors have a minimal PATH),
+  `WHISPER_MODEL=small` or better for non-English speech; when STT is not
+  available the bot says so instead of staying silent. Command traffic
+  never touches the ingestion ledger or source-health counters.
 - `task_assistant_mcp.py` exposes the JSON API as an MCP server so Claude Code,
   Claude Desktop, and other MCP clients can read the queue, claim work, and
   ingest context directly. See `docs/MCP.md`.

@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Local speech-to-text for the Telegram adapter — no cloud, no API keys.
+"""Local speech in both directions for the Telegram adapter — no cloud, no keys.
 
 Voice notes are normalized with ffmpeg (16 kHz mono WAV) and transcribed by a
 whisper CLI on this machine (a faster-whisper wrapper or any compatible
 command that accepts `--model`, `--language`, `-o OUTPUT`, and an input file,
 and writes optionally-timestamped text). Everything runs on-device.
+
+The reverse direction — text to speech for voice answers — prefers a local
+Piper neural voice (`PIPER_BIN` + `PIPER_MODEL`, .onnx) and falls back to
+macOS `say`; output is OGG/Opus, the format Telegram voice bubbles expect.
 
 Environment:
 - FFMPEG_BIN       ffmpeg path (default: `ffmpeg` on PATH). Set an absolute
@@ -14,6 +18,9 @@ Environment:
                    English-only models mangle Russian).
 - WHISPER_HF_HOME  stable model cache for wrappers that default HF_HOME to
                    the current directory.
+- PIPER_BIN        piper CLI path (neural TTS; optional).
+- PIPER_MODEL      piper voice model path (.onnx; required with PIPER_BIN).
+- TTS_SAY_VOICE    fallback macOS `say` voice (default Milena for Russian).
 """
 
 from __future__ import annotations
@@ -98,3 +105,66 @@ def transcribe(audio: Path, *, lang: str | None = None, timeout: float = 300.0) 
         raw = out.read_text(encoding="utf-8") if out.exists() else completed.stdout
     transcript = parse_transcript_output(raw)
     return transcript or None
+
+
+# ---------- text to speech (voice answers) ----------
+
+
+def tts_available() -> bool:
+    if _binary("FFMPEG_BIN", "ffmpeg") is None:
+        return False
+    piper = os.getenv("PIPER_BIN", "").strip()
+    if piper and os.access(piper, os.X_OK) and Path(os.getenv("PIPER_MODEL", "")).is_file():
+        return True
+    return shutil.which("say") is not None
+
+
+def synthesize_voice(text: str, target_ogg: Path, *, lang: str = "ru", timeout: float = 120.0) -> Path | None:
+    """Render text to OGG/Opus (Telegram voice-bubble format), or None.
+
+    Prefers the Piper neural voice when configured; falls back to macOS
+    `say`. All intermediates live in a temp dir and are removed."""
+    ffmpeg = _binary("FFMPEG_BIN", "ffmpeg")
+    if ffmpeg is None:
+        print("voice answer skipped: ffmpeg not found", file=sys.stderr)
+        return None
+    piper = os.getenv("PIPER_BIN", "").strip()
+    piper_model = os.getenv("PIPER_MODEL", "").strip()
+    target_ogg.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="pta-tts-") as workdir:
+        wav = Path(workdir) / "answer.wav"
+        try:
+            if piper and os.access(piper, os.X_OK) and Path(piper_model).is_file():
+                subprocess.run(
+                    [piper, "-m", piper_model, "-f", str(wav)],
+                    input=text,
+                    text=True,
+                    check=True,
+                    capture_output=True,
+                    timeout=timeout,
+                )
+            else:
+                say = shutil.which("say")
+                if say is None:
+                    print("voice answer skipped: neither piper nor say available", file=sys.stderr)
+                    return None
+                voice = os.getenv("TTS_SAY_VOICE", "").strip() or ("Milena" if lang == "ru" else "")
+                command = [say, "-o", str(wav.with_suffix(".aiff"))]
+                if voice:
+                    command += ["-v", voice]
+                command.append(text)
+                subprocess.run(command, check=True, capture_output=True, timeout=timeout)
+                wav = wav.with_suffix(".aiff")
+            subprocess.run(
+                [ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), "-c:a", "libopus", "-b:a", "48k", "-ar", "48000", "-ac", "1", str(target_ogg)],
+                check=True,
+                capture_output=True,
+                timeout=timeout,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+            detail = getattr(exc, "stderr", "") or ""
+            if isinstance(detail, bytes):
+                detail = detail.decode(errors="replace")
+            print(f"voice answer failed: {exc} {str(detail)[:200]}", file=sys.stderr)
+            return None
+    return target_ogg

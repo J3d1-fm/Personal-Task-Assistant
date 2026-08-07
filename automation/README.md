@@ -108,7 +108,13 @@ TELEGRAM_NOTIFY_CHAT_ID=123456789 # your chat with the bot
                                        # to "Milena (Enhanced)" once downloaded
                                        # (Settings -> Accessibility -> Spoken Content)
 # TELEGRAM_DIGEST_VOICE_RATE=170       # words per minute
+# Neural voice (preferred when set — much nicer than `say`):
+# PIPER_BIN=/path/to/piper             # local Piper TTS install
+# PIPER_MODEL=/path/to/ru_RU-irina-medium.onnx
 ```
+
+The digest audio file is deleted right after successful delivery — no audio
+accumulates in `logs/`.
 
 The review-button presses come back through the Telegram polling adapter —
 run it supervised so the buttons always work:

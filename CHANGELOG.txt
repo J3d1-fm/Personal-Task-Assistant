@@ -1,5 +1,40 @@
 Personal Task Assistant Changelog
 
+Version 0.14.0 - 2026-08-07
+
+Voice answers and a neural voice:
+- A voice (or text-free-form) message that asks a question is now answered
+  instead of becoming a task. Intent detection is deliberately narrow and
+  fully deterministic — a question word plus an explicit task number
+  («какая задача под номером 1 и какой статус?», "what's the status of
+  task 158") answers with the task's title, spoken status, owner, priority,
+  and due date; a question word plus a board word («что на доске»,
+  «покажи сводку») answers with the queue summary. Everything else still
+  creates a task. Driven by a real misfire: the owner's first voice
+  question was turned into a task instead of being answered.
+- Answers come back as text plus a Telegram voice bubble synthesized
+  locally: a Piper neural voice when configured (PIPER_BIN + PIPER_MODEL,
+  .onnx — ru_RU-irina-medium is the default install; dmitri also
+  downloaded), falling back to macOS `say`/Milena. The daily digest's
+  spoken version prefers the same Piper voice. No cloud TTS anywhere.
+- Unknown task numbers get an honest "task not found" answer.
+
+Voice privacy and the weekly transcript log:
+- Voice audio never persists: Telegram downloads, whisper intermediates,
+  and synthesized answers all live in temporary directories wiped
+  immediately after use, and the digest's audio file is deleted right after
+  successful delivery.
+- The transcript is the only trace kept: every transcribed voice message is
+  appended to a weekly local log named by the week's dates
+  (automation/logs/voice-transcripts-<monday>_<sunday>.txt, override with
+  VOICE_TRANSCRIPT_DIR) with a timestamp and the outcome (created #N /
+  query #N / reply #N).
+- Added tests for intent detection (queries vs dictated tasks), the spoken
+  task answer, the query flow never creating tasks, weekly log naming and
+  rollover, Piper-first synthesis with `say` fallback, and OGG/Opus output
+  (163 tests total).
+- Bumped the app version from 0.13.1 to 0.14.0.
+
 Version 0.13.1 - 2026-08-07
 
 - Fixed a stale 0.12.0-era voice test that broke CI on 0.13.0: written for

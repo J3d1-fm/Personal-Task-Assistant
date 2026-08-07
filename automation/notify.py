@@ -163,6 +163,49 @@ def send_audio(config: NotifyConfig, path: Path, *, title: str) -> bool:
         return False
 
 
+def _piper_synthesize(text: str, target: Path, timeout: float = 120.0) -> Path | None:
+    """Neural TTS via a local Piper install (PIPER_BIN + PIPER_MODEL); None
+    when not configured or failing — callers fall back to macOS `say`."""
+    piper = os.getenv("PIPER_BIN", "").strip()
+    model = os.getenv("PIPER_MODEL", "").strip()
+    if not piper or not os.access(piper, os.X_OK) or not Path(model).is_file():
+        return None
+    converter = shutil.which("afconvert")
+    ffmpeg = os.getenv("FFMPEG_BIN", "").strip() or shutil.which("ffmpeg")
+    if not converter and not ffmpeg:
+        return None
+    wav = target.with_suffix(".piper.wav")
+    try:
+        subprocess.run(
+            [piper, "-m", model, "-f", str(wav)],
+            input=text,
+            text=True,
+            check=True,
+            capture_output=True,
+            timeout=timeout,
+        )
+        if converter:
+            subprocess.run(
+                [converter, "-f", "m4af", "-d", "aac", str(wav), str(target)],
+                check=True,
+                capture_output=True,
+                timeout=timeout,
+            )
+        else:
+            subprocess.run(
+                [ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), "-c:a", "aac", str(target)],
+                check=True,
+                capture_output=True,
+                timeout=timeout,
+            )
+        return target
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        print(f"piper synthesis failed, falling back to say: {exc}", file=sys.stderr)
+        return None
+    finally:
+        wav.unlink(missing_ok=True)
+
+
 def synthesize_speech(
     text: str,
     target: Path,
@@ -176,12 +219,15 @@ def synthesize_speech(
     candidate is tried). Both binaries ship with macOS; on other platforms
     this quietly returns None so the text digest still goes out alone.
     """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    piper_result = _piper_synthesize(text, target)
+    if piper_result is not None:
+        return piper_result
     say = shutil.which("say")
     afconvert = shutil.which("afconvert")
     if not say or not afconvert:
         print("spoken digest skipped: `say`/`afconvert` not available on this system.", file=sys.stderr)
         return None
-    target.parent.mkdir(parents=True, exist_ok=True)
     aiff = target.with_suffix(".aiff")
     last_error = ""
     try:
