@@ -1,5 +1,14 @@
 Personal Task Assistant Changelog
 
+Version 0.11.3 - 2026-08-07
+
+- Added manual dispatch (workflow_dispatch) to the CI workflow as a recovery
+  lever: a multi-hour GitHub Actions incident on 2026-08-06 cancelled queued
+  jobs (runs report failure while their jobs report cancelled) and left one
+  run in a zombie queued state that could neither be cancelled nor rerun.
+  With no manual trigger, the only way to get a fresh run was another push.
+- Bumped the app version from 0.11.2 to 0.11.3.
+
 Version 0.11.2 - 2026-08-06
 
 - Fixed reminders re-firing on every poll for tasks with one target in the
