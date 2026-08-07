@@ -1,5 +1,37 @@
 Personal Task Assistant Changelog
 
+Version 0.13.0 - 2026-08-07
+
+Voice messages, transcribed on-device:
+- Added `adapters/speech_to_text.py`: voice and video notes are normalized
+  with the machine's ffmpeg (16 kHz mono WAV) and transcribed by a local
+  whisper CLI (a faster-whisper wrapper or any compatible command) — no
+  cloud services, no API keys, nothing leaves the machine. Configuration:
+  `FFMPEG_BIN` / `WHISPER_BIN` (absolute paths — supervisors run with a
+  minimal PATH), `WHISPER_MODEL` (default `small`, multilingual —
+  English-only models mangle Russian), `WHISPER_HF_HOME` for a stable model
+  cache. Verified live end to end on Telegram's own OGG/Opus format with a
+  word-perfect Russian transcript.
+- Transcribed voice follows the same rules as text: a voice reply to a bot
+  message about `#N` acts on that task (the first transcribed word picks
+  done/rework/block/comment and the transcript lands as a dated note); a
+  standalone voice note creates one task — title cut at a word boundary
+  from the transcript, full transcript in the description, origin telegram
+  — via `POST /api/agent/tasks`.
+- The bot always echoes what it heard («🎙 „…"») before confirming the
+  action, so mishearings are visible and immediately correctable. Honest
+  localized answers replace silence when STT is unavailable, transcription
+  fails, or the note exceeds `VOICE_MAX_SECONDS` (default 600).
+- Voice is routed before the reply branch (a voice reply has no text and
+  would otherwise be swallowed as an empty command) and bypasses the
+  fingerprint ledger — a Telegram voice message cannot be edited, so the
+  update offset alone prevents reprocessing; documented in
+  `docs/ADAPTER_CONTRACT.md`.
+- Added offline tests for transcript parsing, binary discovery, command
+  construction, voice-task creation, voice reply commands, failure and
+  too-long answers, and title cutting (157 tests total).
+- Bumped the app version from 0.12.0 to 0.13.0.
+
 Version 0.12.0 - 2026-08-07
 
 Reply to the bot = act on the task:

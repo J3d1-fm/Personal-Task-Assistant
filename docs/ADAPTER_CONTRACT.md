@@ -169,6 +169,13 @@ before the ingest/ledger path:
   block-words block it, anything else is a comment — and the full reply text
   is appended to the task description as a dated note. The adapter answers
   with a localized confirmation.
+- **Voice messages** (voice notes and video notes): transcribed on-device
+  (ffmpeg + whisper), then routed like text — a voice reply becomes a reply
+  command on the referenced task; a standalone voice note creates one task
+  from the transcript via `POST /api/agent/tasks`. The transcript is echoed
+  back so the human sees exactly what was heard. Voice traffic bypasses the
+  fingerprint ledger: a Telegram voice message cannot be edited, so the
+  update offset alone prevents reprocessing.
 
 Command traffic never creates ingestion decisions, never counts toward
 source-health scan metrics, and needs no fingerprinting — the contract above

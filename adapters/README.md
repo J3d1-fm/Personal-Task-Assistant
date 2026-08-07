@@ -21,9 +21,18 @@ The repository includes two connectors:
   with a localized confirmation back in the chat. Button presses and replies
   from an allowed chat are the human's decision applied with
   `PATCH /api/tasks/{id}` (deliberately the one path through the adapter
-  that may set a task to `done` — a human did it). Voice messages get an
-  honest "can't transcribe yet" answer instead of silence. Command traffic
-  never touches the ingestion ledger or source-health counters.
+  that may set a task to `done` — a human did it).
+
+  **Voice messages** are transcribed locally (`speech_to_text.py`: ffmpeg +
+  a whisper CLI, no cloud, no API keys) and then behave like text: a voice
+  reply to a task message acts on that task (first transcribed word picks
+  the action), a standalone voice note creates a task titled from the
+  transcript. The bot always echoes what it heard («🎙 …»), so mishearings
+  are visible and correctable. Configure `FFMPEG_BIN`/`WHISPER_BIN` with
+  absolute paths (supervisors have a minimal PATH), `WHISPER_MODEL=small`
+  or better for non-English speech; when STT is not available the bot says
+  so instead of staying silent. Command traffic never touches the ingestion
+  ledger or source-health counters.
 - `task_assistant_mcp.py` exposes the JSON API as an MCP server so Claude Code,
   Claude Desktop, and other MCP clients can read the queue, claim work, and
   ingest context directly. See `docs/MCP.md`.

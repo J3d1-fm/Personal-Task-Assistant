@@ -81,10 +81,24 @@ REPLY_MESSAGES: dict[str, dict[str, str]] = {
     "not_found": {"en": "Task #{task_id} not found.", "ru": "Задача #{task_id} не найдена."},
     "empty": {"en": "Empty reply — nothing saved.", "ru": "Пустой ответ — ничего не сохранил."},
     "voice_stub": {
-        "en": "I can't transcribe voice messages yet — text only for now.",
-        "ru": "Голосовые пока не расшифровываю — напиши текстом, я всё сделаю.",
+        "en": "Voice transcription is not available on this machine ({reason}).",
+        "ru": "Расшифровка голосовых на этой машине недоступна ({reason}).",
+    },
+    "voice_failed": {
+        "en": "Could not transcribe that voice message — try again or type it.",
+        "ru": "Не смог расшифровать голосовое — попробуй ещё раз или напиши текстом.",
+    },
+    "voice_too_long": {
+        "en": "Voice message is too long ({duration}s, max {limit}s).",
+        "ru": "Голосовое слишком длинное ({duration}с, максимум {limit}с).",
+    },
+    "voice_created": {
+        "en": "🎙 «{transcript}»\n\n📝 Created #{task_id}: {title}",
+        "ru": "🎙 «{transcript}»\n\n📝 Создал #{task_id}: {title}",
     },
 }
+
+VOICE_MAX_SECONDS = int(os.getenv("VOICE_MAX_SECONDS", "600"))
 
 
 def assistant_lang() -> str:
@@ -642,7 +656,9 @@ def send_reply(config: AdapterConfig, message: dict[str, Any], text: str) -> Non
     )
 
 
-def handle_reply_command(config: AdapterConfig, message: dict[str, Any], task_id: int, text: str) -> None:
+def handle_reply_command(
+    config: AdapterConfig, message: dict[str, Any], task_id: int, text: str, *, echo: bool = False
+) -> None:
     lang = assistant_lang()
     if not text:
         send_reply(config, message, REPLY_MESSAGES["empty"][lang])
@@ -671,7 +687,115 @@ def handle_reply_command(config: AdapterConfig, message: dict[str, Any], task_id
         print(f"reply command for task {task_id} failed: {exc}", file=sys.stderr)
         send_reply(config, message, CALLBACK_MESSAGES["failed"][lang].format(task_id=task_id))
         return
-    send_reply(config, message, REPLY_MESSAGES[action][lang].format(task_id=task_id))
+    confirmation = REPLY_MESSAGES[action][lang].format(task_id=task_id)
+    if echo:
+        confirmation = f"🎙 «{text}»\n\n{confirmation}"
+    send_reply(config, message, confirmation)
+
+
+def telegram_file_path(config: AdapterConfig, file_id: str) -> str | None:
+    try:
+        response = requests.get(
+            f"https://api.telegram.org/bot{config.telegram_bot_token}/getFile",
+            params={"file_id": file_id},
+            timeout=30,
+        )
+        payload = response.json()
+        if response.ok and payload.get("ok"):
+            return str(payload["result"]["file_path"])
+        print(f"getFile failed: {sanitize_error(payload, config)}", file=sys.stderr)
+    except (requests.RequestException, ValueError, KeyError) as exc:
+        print(f"getFile failed: {sanitize_error(exc, config)}", file=sys.stderr)
+    return None
+
+
+def download_telegram_file(config: AdapterConfig, file_path: str, destination: Path) -> bool:
+    try:
+        response = requests.get(
+            f"https://api.telegram.org/file/bot{config.telegram_bot_token}/{file_path}",
+            timeout=60,
+        )
+        if not response.ok:
+            print(f"file download failed with HTTP {response.status_code}", file=sys.stderr)
+            return False
+        destination.write_bytes(response.content)
+        return True
+    except (requests.RequestException, OSError) as exc:
+        print(f"file download failed: {sanitize_error(exc, config)}", file=sys.stderr)
+        return False
+
+
+def voice_task_title(transcript: str, limit: int = 120) -> str:
+    text = " ".join(transcript.split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].rstrip(",.;:—-")
+    return f"{cut}…"
+
+
+def handle_voice_message(config: AdapterConfig, message: dict[str, Any]) -> None:
+    import tempfile
+
+    import speech_to_text
+
+    lang = assistant_lang()
+    media = message.get("voice") or message.get("video_note") or {}
+    duration = int(media.get("duration") or 0)
+    if duration > VOICE_MAX_SECONDS:
+        send_reply(
+            config,
+            message,
+            REPLY_MESSAGES["voice_too_long"][lang].format(duration=duration, limit=VOICE_MAX_SECONDS),
+        )
+        return
+    ok, reason = speech_to_text.available()
+    if not ok:
+        send_reply(config, message, REPLY_MESSAGES["voice_stub"][lang].format(reason=reason))
+        return
+    file_path = telegram_file_path(config, str(media.get("file_id") or ""))
+    if file_path is None:
+        send_reply(config, message, REPLY_MESSAGES["voice_failed"][lang])
+        return
+    with tempfile.TemporaryDirectory(prefix="pta-voice-") as workdir:
+        audio = Path(workdir) / (Path(file_path).name or "voice.oga")
+        if not download_telegram_file(config, file_path, audio):
+            send_reply(config, message, REPLY_MESSAGES["voice_failed"][lang])
+            return
+        transcript = speech_to_text.transcribe(audio, lang="ru" if lang == "ru" else None)
+    if not transcript:
+        send_reply(config, message, REPLY_MESSAGES["voice_failed"][lang])
+        return
+
+    reply_command = parse_reply_command(message, config.bot_id)
+    if reply_command is not None:
+        handle_reply_command(config, message, reply_command[0], transcript, echo=True)
+        return
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    title = voice_task_title(transcript)
+    try:
+        task = tracker_post(
+            config,
+            "/api/agent/tasks",
+            {
+                "title": title,
+                "description": f"{transcript}\n\n— {stamp} (Telegram, голосовое)"
+                if lang == "ru"
+                else f"{transcript}\n\n— {stamp} (Telegram, voice note)",
+                "origin": "telegram",
+                "source_name": config.source_name,
+            },
+        )
+    except TrackerRequestError as exc:
+        print(f"voice task creation failed: {exc}", file=sys.stderr)
+        send_reply(config, message, REPLY_MESSAGES["voice_failed"][lang])
+        return
+    send_reply(
+        config,
+        message,
+        REPLY_MESSAGES["voice_created"][lang].format(
+            transcript=transcript, task_id=task.get("id"), title=title
+        ),
+    )
 
 
 def process_update(config: AdapterConfig, update: dict[str, Any]) -> RunMetrics:
@@ -683,14 +807,16 @@ def process_update(config: AdapterConfig, update: dict[str, Any]) -> RunMetrics:
     message = update.get("message") or update.get("edited_message") or {}
     if not message or not is_allowed_chat(config, message):
         return metrics
-    # Command traffic short-circuits before the ingest/ledger path.
+    # Command traffic short-circuits before the ingest/ledger path. Voice is
+    # checked first: a voice reply has no text, so the reply branch would
+    # otherwise swallow it as an empty command before transcription.
+    if message.get("voice") or message.get("video_note"):
+        if not config.dry_run:
+            handle_voice_message(config, message)
+        return metrics
     reply_command = parse_reply_command(message, config.bot_id)
     if reply_command is not None:
         handle_reply_command(config, message, *reply_command)
-        return metrics
-    if message.get("voice") or message.get("video_note"):
-        if not config.dry_run:
-            send_reply(config, message, REPLY_MESSAGES["voice_stub"][assistant_lang()])
         return metrics
     metrics.items_checked = 1
     text = message.get("text") or ""

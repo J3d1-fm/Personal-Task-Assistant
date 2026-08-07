@@ -522,3 +522,119 @@ def test_voice_message_gets_stub_answer_without_ledger(monkeypatch):
     metrics = process_update(config, {"update_id": 1, "message": message})
     assert metrics.items_checked == 0
     assert sent and ("Голосовые" in sent[0]["text"] or "voice" in sent[0]["text"])
+
+
+# ---------- voice messages (local STT) ----------
+
+
+def _voice_message(duration=5, reply_to=None):
+    message = {
+        "message_id": 600,
+        "chat": {"id": 1},
+        "voice": {"file_id": "voice-file-id", "duration": duration},
+    }
+    if reply_to is not None:
+        message["reply_to_message"] = reply_to
+    return message
+
+
+def _wire_voice(monkeypatch, transcript="Добавь задачу проверить оплату в Google Play"):
+    import speech_to_text
+
+    monkeypatch.setattr(speech_to_text, "available", lambda: (True, ""))
+    monkeypatch.setattr(speech_to_text, "transcribe", lambda path, lang=None: transcript)
+    monkeypatch.setattr(telegram_adapter, "telegram_file_path", lambda _c, _f: "voice/file_1.oga")
+    monkeypatch.setattr(
+        telegram_adapter, "download_telegram_file", lambda _c, _p, dest: dest.write_bytes(b"x") or True
+    )
+
+
+def test_voice_message_creates_task_with_transcript(monkeypatch):
+    monkeypatch.setenv("ASSISTANT_LANG", "ru")
+    config = _config(dry_run=False, bot_id=123456)
+    created, sent = [], []
+    _wire_voice(monkeypatch)
+    monkeypatch.setattr(
+        telegram_adapter,
+        "tracker_post",
+        lambda _c, path, payload: created.append((path, payload)) or {"id": 301},
+    )
+    monkeypatch.setattr(
+        telegram_adapter, "telegram_post", lambda _c, m, payload: sent.append(payload) or True
+    )
+    metrics = process_update(config, {"update_id": 1, "message": _voice_message()})
+    assert metrics.items_checked == 0
+    path, payload = created[0]
+    assert path == "/api/agent/tasks"
+    assert payload["title"].startswith("Добавь задачу проверить оплату")
+    assert payload["origin"] == "telegram"
+    assert "(Telegram, голосовое)" in payload["description"]
+    assert "Создал #301" in sent[0]["text"]
+    assert "🎙" in sent[0]["text"]
+
+
+def test_voice_reply_acts_on_task(monkeypatch):
+    monkeypatch.setenv("ASSISTANT_LANG", "ru")
+    config = _config(dry_run=False, bot_id=123456)
+    patched, sent = [], []
+    _wire_voice(monkeypatch, transcript="Закрыто, всё проверил")
+    monkeypatch.setattr(telegram_adapter, "tracker_get", lambda _c, path: {"id": 267, "description": ""})
+    monkeypatch.setattr(
+        telegram_adapter, "tracker_patch", lambda _c, path, payload: patched.append((path, payload)) or {}
+    )
+    monkeypatch.setattr(
+        telegram_adapter, "telegram_post", lambda _c, m, payload: sent.append(payload) or True
+    )
+    reply_to = {"message_id": 400, "from": {"id": 123456, "is_bot": True}, "text": "⏰ Напоминание: #267 Secure"}
+    process_update(config, {"update_id": 1, "message": _voice_message(reply_to=reply_to)})
+    assert patched[0][0] == "/api/tasks/267"
+    assert patched[0][1]["status"] == "done"
+    assert "🎙 «Закрыто, всё проверил»" in sent[0]["text"]
+    assert "закрыта" in sent[0]["text"]
+
+
+def test_voice_transcription_failure_answers_honestly(monkeypatch):
+    import speech_to_text
+
+    config = _config(dry_run=False, bot_id=123456)
+    sent = []
+    monkeypatch.setattr(speech_to_text, "available", lambda: (True, ""))
+    monkeypatch.setattr(speech_to_text, "transcribe", lambda path, lang=None: None)
+    monkeypatch.setattr(telegram_adapter, "telegram_file_path", lambda _c, _f: "voice/file_1.oga")
+    monkeypatch.setattr(
+        telegram_adapter, "download_telegram_file", lambda _c, _p, dest: dest.write_bytes(b"x") or True
+    )
+    monkeypatch.setattr(
+        telegram_adapter, "tracker_post", lambda *_a: pytest.fail("must not create tasks")
+    )
+    monkeypatch.setattr(
+        telegram_adapter, "telegram_post", lambda _c, m, payload: sent.append(payload) or True
+    )
+    process_update(config, {"update_id": 1, "message": _voice_message()})
+    assert "Не смог расшифровать" in sent[0]["text"] or "Could not transcribe" in sent[0]["text"]
+
+
+def test_voice_too_long_is_refused(monkeypatch):
+    import speech_to_text
+
+    config = _config(dry_run=False, bot_id=123456)
+    sent = []
+    monkeypatch.setattr(
+        speech_to_text, "available", lambda: pytest.fail("must not reach STT")
+    )
+    monkeypatch.setattr(
+        telegram_adapter, "telegram_file_path", lambda *_a: pytest.fail("must not download")
+    )
+    monkeypatch.setattr(
+        telegram_adapter, "telegram_post", lambda _c, m, payload: sent.append(payload) or True
+    )
+    process_update(config, {"update_id": 1, "message": _voice_message(duration=999)})
+    assert "слишком длинное" in sent[0]["text"] or "too long" in sent[0]["text"]
+
+
+def test_voice_task_title_cuts_at_word_boundary():
+    long = "слово " * 40
+    title = telegram_adapter.voice_task_title(long.strip())
+    assert len(title) <= 121
+    assert title.endswith("…")
+    assert not title[:-1].endswith(" ")

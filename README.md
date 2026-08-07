@@ -159,7 +159,10 @@ the task over the normal API — approving a review from your phone closes the
 human-in-the-loop cycle from anywhere. You can also just **reply to any bot
 message about a task** («закрыто, пароль сменили», "done", "block — waiting
 on access", or any free-text note): the reply's first word picks the action
-and the whole text lands on the task as a dated note. Closing a task remains
+and the whole text lands on the task as a dated note. **Voice works too** —
+voice notes are transcribed on-device (ffmpeg + whisper, no cloud) and follow
+the same rules: a voice reply acts on that task, a standalone voice note
+becomes a new task, and the bot echoes what it heard. Closing a task remains
 exclusively a human action: agents still cannot set `done`; the ✅ button and
 your reply are your finger, not the agent's.
 
