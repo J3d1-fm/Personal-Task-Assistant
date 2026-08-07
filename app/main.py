@@ -201,6 +201,14 @@ def create_task(payload: TaskCreate, background_tasks: BackgroundTasks, db: Sess
     return task
 
 
+@app.get("/api/tasks/{task_id}", response_model=TaskRead, dependencies=[Depends(require_api_key_or_user)])
+def get_task(task_id: int, db: Session = Depends(get_db)) -> TaskRead:
+    task = get_task_store(db).get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
 @app.patch("/api/tasks/{task_id}", response_model=TaskRead, dependencies=[Depends(require_api_key_or_user)])
 def update_task(
     task_id: int,

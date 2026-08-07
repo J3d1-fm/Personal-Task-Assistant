@@ -157,9 +157,19 @@ decisions, source health, or the Telegram offset.
 
 ## Out of scope: command traffic
 
-Inline-button callbacks on review requests (sent by `automation/notify.py`,
-handled by the Telegram adapter) are command traffic, not source content: a
-button press from an allowed chat applies the human's decision to the task via
-`PATCH /api/tasks/{id}`. Command traffic never creates ingestion decisions,
-never counts toward source-health scan metrics, and needs no fingerprinting —
-the contract above applies only to reading items *from* a source.
+Two message kinds are command traffic, not source content, and short-circuit
+before the ingest/ledger path:
+
+- **Inline-button callbacks** on review requests (sent by
+  `automation/notify.py`): a press from an allowed chat applies the human's
+  decision via `PATCH /api/tasks/{id}`.
+- **Replies to the bot's own messages** that mention `#N` (reminders, review
+  requests): the reply addresses that task directly. The first word picks the
+  action — done-words close it, rework-words return it to in_progress,
+  block-words block it, anything else is a comment — and the full reply text
+  is appended to the task description as a dated note. The adapter answers
+  with a localized confirmation.
+
+Command traffic never creates ingestion decisions, never counts toward
+source-health scan metrics, and needs no fingerprinting — the contract above
+applies only to reading items *from* a source.

@@ -13,11 +13,17 @@ The repository includes two connectors:
 - `telegram_polling_adapter.py` reads Telegram Bot API updates and sends
   normalized tasks to `POST /api/agent/ingest/context`. It also handles the
   inline ✅ Done / 🔁 Rework / ✋ Block buttons on review requests that
-  `automation/notify.py` sends: a button press from an allowed chat is the
-  human's decision and is applied to the task with `PATCH /api/tasks/{id}`
-  (this is deliberately the one path through the adapter that may set a task
-  to `done` — a human pressed it). Callback traffic is bot-command traffic:
-  it never touches the ingestion ledger or source-health counters.
+  `automation/notify.py` sends, and **replies to bot messages**: replying to
+  a reminder/review message about `#N` applies that reply to the task — the
+  first word picks the action (закрыто/готово/done → close,
+  доработай/rework → in_progress, блок/block → blocked, anything else →
+  comment) and the full text is appended to the description as a dated note,
+  with a localized confirmation back in the chat. Button presses and replies
+  from an allowed chat are the human's decision applied with
+  `PATCH /api/tasks/{id}` (deliberately the one path through the adapter
+  that may set a task to `done` — a human did it). Voice messages get an
+  honest "can't transcribe yet" answer instead of silence. Command traffic
+  never touches the ingestion ledger or source-health counters.
 - `task_assistant_mcp.py` exposes the JSON API as an MCP server so Claude Code,
   Claude Desktop, and other MCP clients can read the queue, claim work, and
   ingest context directly. See `docs/MCP.md`.

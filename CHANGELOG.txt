@@ -1,5 +1,35 @@
 Personal Task Assistant Changelog
 
+Version 0.12.0 - 2026-08-07
+
+Reply to the bot = act on the task:
+- Replying to any bot message that mentions a task («⏰ Напоминание: #267…»,
+  «👀 Нужно ревью: #247…») now applies the reply to that task. The first
+  word picks the action: close-words (закрыто/готово/сделано/done/closed…)
+  set status done, rework-words (доработай/переделай/rework…) return it to
+  in_progress, block-words (блок/заблокировано/block…) set blocked, and
+  anything else is a comment that changes no status. In every case the full
+  reply text is appended to the task description as a dated
+  "— YYYY-MM-DD HH:MM (Telegram): …" note, and the adapter answers with a
+  localized confirmation in the chat. Replies to non-bot messages and
+  replies without a task number are untouched.
+- Reply commands are command traffic like the inline buttons: they
+  short-circuit before the ingest path and never touch the
+  ingestion-decision ledger or source-health counters
+  (docs/ADAPTER_CONTRACT.md updated). Like the buttons, a reply from an
+  allowed chat is the human's decision — this remains the only way a task
+  reaches done.
+- Voice and video-note messages now get an honest localized "can't
+  transcribe voice yet" answer instead of silently being recorded as
+  ignored, until the speech-to-text channel lands.
+- Added `GET /api/tasks/{id}` (404 for unknown ids) for read-modify-write
+  flows like note appending; documented in docs/API.md.
+- Added tests for reply parsing (bot-authored targets only), first-word
+  action classification in Russian and English, note appending with and
+  without a status change, unknown-task replies, and the voice stub
+  bypassing the ledger (147 tests total).
+- Bumped the app version from 0.11.3 to 0.12.0.
+
 Version 0.11.3 - 2026-08-07
 
 - Added manual dispatch (workflow_dispatch) to the CI workflow as a recovery

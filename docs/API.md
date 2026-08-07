@@ -225,6 +225,15 @@ Response shape:
 `GET /api/tasks` additionally supports `limit` (1-500) and `offset` for paging
 through large boards.
 
+`GET /api/tasks/{id}` returns a single task (404 when the id is unknown) —
+useful for read-modify-write flows such as appending a note to the
+description:
+
+```bash
+curl "$TASK_TRACKER_URL/api/tasks/42" \
+  -H "Authorization: Bearer $TASK_TRACKER_API_KEY"
+```
+
 ## Poll the Queue Cheaply
 
 `GET /api/agent/queue/summary` returns only the summary block above. Use it for

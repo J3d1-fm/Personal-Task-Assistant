@@ -55,9 +55,61 @@ CALLBACK_MESSAGES: dict[str, dict[str, str]] = {
     "failed": {"en": "Failed to update #{task_id} — see adapter logs.", "ru": "Не получилось обновить #{task_id} — смотри логи адаптера."},
 }
 
+# Replying to one of the bot's own messages (a reminder, a review request, a
+# digest line mentioning "#N") addresses that task directly: the first word
+# picks the action, the whole reply is appended to the task as a dated note.
+# Like the buttons, this is the human's decision from an allowed chat —
+# command traffic, never ingest.
+REPLY_TASK_RE = re.compile(r"#(\d+)")
+REPLY_ACTION_WORDS: dict[str, set[str]] = {
+    "done": {
+        "закрыто", "закрыта", "закрыт", "закрыты", "закрой", "готово", "готов",
+        "сделано", "сделал", "сделали", "выполнено", "done", "closed", "close",
+    },
+    "rework": {
+        "доработать", "доработай", "доработка", "переделай", "переделать",
+        "вернуть", "верни", "rework", "redo",
+    },
+    "block": {"блок", "заблокировано", "заблокирована", "заблокируй", "block", "blocked"},
+}
+REPLY_STATUS = {"done": "done", "rework": "in_progress", "block": "blocked"}
+REPLY_MESSAGES: dict[str, dict[str, str]] = {
+    "done": {"en": "✅ #{task_id} closed, note saved.", "ru": "✅ #{task_id} закрыта, комментарий сохранён."},
+    "rework": {"en": "🔁 #{task_id} back to in progress, note saved.", "ru": "🔁 #{task_id} возвращена в работу, комментарий сохранён."},
+    "block": {"en": "✋ #{task_id} blocked, note saved.", "ru": "✋ #{task_id} заблокирована, комментарий сохранён."},
+    "comment": {"en": "💬 Note added to #{task_id}.", "ru": "💬 Комментарий добавлен к #{task_id}."},
+    "not_found": {"en": "Task #{task_id} not found.", "ru": "Задача #{task_id} не найдена."},
+    "empty": {"en": "Empty reply — nothing saved.", "ru": "Пустой ответ — ничего не сохранил."},
+    "voice_stub": {
+        "en": "I can't transcribe voice messages yet — text only for now.",
+        "ru": "Голосовые пока не расшифровываю — напиши текстом, я всё сделаю.",
+    },
+}
+
 
 def assistant_lang() -> str:
     return "ru" if os.getenv("ASSISTANT_LANG", "").strip().lower().startswith("ru") else "en"
+
+
+def parse_reply_command(message: dict[str, Any], bot_id: int) -> tuple[int, str] | None:
+    """Reply to a bot message mentioning '#N' -> (task_id, reply text)."""
+    replied = message.get("reply_to_message") or {}
+    author = replied.get("from") or {}
+    if int(author.get("id") or 0) != bot_id:
+        return None
+    match = REPLY_TASK_RE.search(str(replied.get("text") or replied.get("caption") or ""))
+    if not match:
+        return None
+    return int(match.group(1)), str(message.get("text") or "").strip()
+
+
+def classify_reply_action(text: str) -> str:
+    words = re.split(r"[\s,.:;!()—-]+", text.strip().lower())
+    first = words[0] if words and words[0] else ""
+    for action, stems in REPLY_ACTION_WORDS.items():
+        if first in stems:
+            return action
+    return "comment"
 
 
 @dataclass(frozen=True)
@@ -76,6 +128,7 @@ class AdapterConfig:
     max_retry_interval: float
     dry_run: bool
     once: bool
+    bot_id: int = 0
 
 
 @dataclass
@@ -164,6 +217,7 @@ def load_config() -> AdapterConfig:
         max_retry_interval=max(1.0, float(os.getenv("TELEGRAM_MAX_RETRY_INTERVAL", "300"))),
         dry_run=args.dry_run,
         once=args.once,
+        bot_id=int(default_source_id.rsplit(":", 1)[1]),
     )
 
 
@@ -423,6 +477,10 @@ def tracker_patch(config: AdapterConfig, path: str, payload: dict[str, Any]) -> 
     return _tracker_request(config, "PATCH", path, payload)
 
 
+def tracker_get(config: AdapterConfig, path: str) -> dict[str, Any]:
+    return _tracker_request(config, "GET", path, None)
+
+
 def post_to_task_assistant(config: AdapterConfig, payload: dict[str, Any]) -> dict[str, Any]:
     if config.dry_run:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -572,6 +630,50 @@ def handle_callback(config: AdapterConfig, callback: dict[str, Any]) -> None:
         )
 
 
+def send_reply(config: AdapterConfig, message: dict[str, Any], text: str) -> None:
+    telegram_post(
+        config,
+        "sendMessage",
+        {
+            "chat_id": message["chat"]["id"],
+            "text": text,
+            "reply_to_message_id": message.get("message_id"),
+        },
+    )
+
+
+def handle_reply_command(config: AdapterConfig, message: dict[str, Any], task_id: int, text: str) -> None:
+    lang = assistant_lang()
+    if not text:
+        send_reply(config, message, REPLY_MESSAGES["empty"][lang])
+        return
+    action = classify_reply_action(text)
+    if config.dry_run:
+        print(f"dry-run: reply command {action} for task {task_id}: {text[:80]}")
+        return
+    try:
+        task = tracker_get(config, f"/api/tasks/{task_id}")
+    except TrackerRequestError as exc:
+        if "404" in str(exc):
+            send_reply(config, message, REPLY_MESSAGES["not_found"][lang].format(task_id=task_id))
+        else:
+            print(f"reply command for task {task_id} failed: {exc}", file=sys.stderr)
+        return
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    note = f"— {stamp} (Telegram): {text}"
+    description = (task.get("description") or "").rstrip()
+    updates: dict[str, Any] = {"description": f"{description}\n\n{note}" if description else note}
+    if action in REPLY_STATUS:
+        updates["status"] = REPLY_STATUS[action]
+    try:
+        tracker_patch(config, f"/api/tasks/{task_id}", updates)
+    except TrackerRequestError as exc:
+        print(f"reply command for task {task_id} failed: {exc}", file=sys.stderr)
+        send_reply(config, message, CALLBACK_MESSAGES["failed"][lang].format(task_id=task_id))
+        return
+    send_reply(config, message, REPLY_MESSAGES[action][lang].format(task_id=task_id))
+
+
 def process_update(config: AdapterConfig, update: dict[str, Any]) -> RunMetrics:
     metrics = RunMetrics()
     callback = update.get("callback_query")
@@ -580,6 +682,15 @@ def process_update(config: AdapterConfig, update: dict[str, Any]) -> RunMetrics:
         return metrics
     message = update.get("message") or update.get("edited_message") or {}
     if not message or not is_allowed_chat(config, message):
+        return metrics
+    # Command traffic short-circuits before the ingest/ledger path.
+    reply_command = parse_reply_command(message, config.bot_id)
+    if reply_command is not None:
+        handle_reply_command(config, message, *reply_command)
+        return metrics
+    if message.get("voice") or message.get("video_note"):
+        if not config.dry_run:
+            send_reply(config, message, REPLY_MESSAGES["voice_stub"][assistant_lang()])
         return metrics
     metrics.items_checked = 1
     text = message.get("text") or ""

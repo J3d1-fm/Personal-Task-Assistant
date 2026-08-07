@@ -413,3 +413,112 @@ def test_callback_confirmation_localized_to_russian(monkeypatch):
     assert "Принято" in answer["text"]
     edit = telegram_calls[1][1]
     assert "задача закрыта" in edit["text"]
+
+
+# ---------- reply commands (reply to a bot message = act on that task) ----------
+
+
+def _bot_reply_message(reply_text="закрыто, пароль сменили девайсы отключили", replied="⏰ Напоминание: #267 Secure account\nP1", chat_id=1, author_id=123456):
+    return {
+        "message_id": 500,
+        "chat": {"id": chat_id},
+        "text": reply_text,
+        "reply_to_message": {"message_id": 400, "from": {"id": author_id, "is_bot": True}, "text": replied},
+    }
+
+
+def test_parse_reply_command_targets_bot_messages_only():
+    parse = telegram_adapter.parse_reply_command
+    assert parse(_bot_reply_message(), 123456) == (267, "закрыто, пароль сменили девайсы отключили")
+    assert parse(_bot_reply_message(author_id=999), 123456) is None
+    assert parse(_bot_reply_message(replied="no task number here"), 123456) is None
+    assert parse({"text": "no reply", "chat": {"id": 1}}, 123456) is None
+
+
+def test_classify_reply_action_first_word():
+    classify = telegram_adapter.classify_reply_action
+    assert classify("закрыто, пароль сменили девайсы отключили") == "done"
+    assert classify("Готово!") == "done"
+    assert classify("done") == "done"
+    assert classify("Доработай: добавь тест") == "rework"
+    assert classify("блок — жду доступ") == "block"
+    assert classify("пароль сменили, наблюдаю") == "comment"
+
+
+def test_reply_command_appends_note_and_closes(monkeypatch):
+    monkeypatch.setenv("ASSISTANT_LANG", "ru")
+    config = _config(dry_run=False, bot_id=123456)
+    patched, sent = [], []
+    monkeypatch.setattr(
+        telegram_adapter, "tracker_get", lambda _c, path: {"id": 267, "description": "Старое описание"}
+    )
+    monkeypatch.setattr(
+        telegram_adapter,
+        "tracker_patch",
+        lambda _c, path, payload: patched.append((path, payload)) or {},
+    )
+    monkeypatch.setattr(
+        telegram_adapter,
+        "telegram_post",
+        lambda _c, method, payload: sent.append((method, payload)) or True,
+    )
+    metrics = process_update(config, {"update_id": 1, "message": _bot_reply_message()})
+    assert metrics.items_checked == 0  # command traffic, not ingest
+    path, payload = patched[0]
+    assert path == "/api/tasks/267"
+    assert payload["status"] == "done"
+    assert payload["description"].startswith("Старое описание\n\n— ")
+    assert "закрыто, пароль сменили" in payload["description"]
+    assert "(Telegram)" in payload["description"]
+    assert sent[0][0] == "sendMessage"
+    assert "закрыта" in sent[0][1]["text"]
+    assert sent[0][1]["reply_to_message_id"] == 500
+
+
+def test_reply_comment_keeps_status(monkeypatch):
+    config = _config(dry_run=False, bot_id=123456)
+    patched = []
+    monkeypatch.setattr(telegram_adapter, "tracker_get", lambda _c, path: {"id": 267, "description": None})
+    monkeypatch.setattr(
+        telegram_adapter, "tracker_patch", lambda _c, path, payload: patched.append(payload) or {}
+    )
+    monkeypatch.setattr(telegram_adapter, "telegram_post", lambda *_a: True)
+    message = _bot_reply_message(reply_text="пока жду ответа поддержки")
+    process_update(config, {"update_id": 1, "message": message})
+    assert "status" not in patched[0]
+    assert patched[0]["description"].startswith("— ")
+
+
+def test_reply_to_missing_task_answers_not_found(monkeypatch):
+    config = _config(dry_run=False, bot_id=123456)
+    sent = []
+
+    def failing_get(*_args):
+        raise telegram_adapter.TrackerRequestError("HTTP 404: not found")
+
+    monkeypatch.setattr(telegram_adapter, "tracker_get", failing_get)
+    monkeypatch.setattr(
+        telegram_adapter, "tracker_patch", lambda *_a: pytest.fail("must not patch")
+    )
+    monkeypatch.setattr(
+        telegram_adapter, "telegram_post", lambda _c, m, payload: sent.append(payload) or True
+    )
+    process_update(config, {"update_id": 1, "message": _bot_reply_message()})
+    assert "не найдена" in sent[0]["text"] or "not found" in sent[0]["text"]
+
+
+def test_voice_message_gets_stub_answer_without_ledger(monkeypatch):
+    config = _config(dry_run=False, bot_id=123456)
+    sent = []
+    monkeypatch.setattr(
+        telegram_adapter,
+        "should_process_item",
+        lambda *_a: pytest.fail("voice must not hit the ledger"),
+    )
+    monkeypatch.setattr(
+        telegram_adapter, "telegram_post", lambda _c, m, payload: sent.append(payload) or True
+    )
+    message = {"message_id": 7, "chat": {"id": 1}, "voice": {"file_id": "x", "duration": 3}}
+    metrics = process_update(config, {"update_id": 1, "message": message})
+    assert metrics.items_checked == 0
+    assert sent and ("Голосовые" in sent[0]["text"] or "voice" in sent[0]["text"])

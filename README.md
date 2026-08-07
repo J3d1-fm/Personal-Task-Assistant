@@ -156,9 +156,12 @@ See `evals/README.md`.
 
 Button presses travel back through the Telegram polling adapter and update
 the task over the normal API — approving a review from your phone closes the
-human-in-the-loop cycle from anywhere. Closing a task remains exclusively a
-human action: agents still cannot set `done`; the ✅ button is your finger,
-not the agent's.
+human-in-the-loop cycle from anywhere. You can also just **reply to any bot
+message about a task** («закрыто, пароль сменили», "done", "block — waiting
+on access", or any free-text note): the reply's first word picks the action
+and the whole text lands on the task as a dated note. Closing a task remains
+exclusively a human action: agents still cannot set `done`; the ✅ button and
+your reply are your finger, not the agent's.
 
 Install with `automation/install.sh` (daily ritual) and
 `automation/install.sh --watch` (watch loop); full details and the safety

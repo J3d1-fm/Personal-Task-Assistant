@@ -89,3 +89,11 @@ def test_duplicate_external_id_conflicts(client, api_headers, make_task):
         "/api/agent/tasks", json={"title": "third", "external_id": "ext:1"}, headers=api_headers
     )
     assert agent_response.status_code == 409
+
+
+def test_get_single_task(client, api_headers):
+    created = client.post("/api/tasks", json={"title": "single get"}, headers=api_headers).json()
+    fetched = client.get(f"/api/tasks/{created['id']}", headers=api_headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["title"] == "single get"
+    assert client.get("/api/tasks/999999", headers=api_headers).status_code == 404
