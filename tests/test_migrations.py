@@ -62,9 +62,9 @@ def _index_names(url: str, table_name: str) -> set[str]:
 def test_fresh_database_is_created_at_head(tmp_path):
     url = f"sqlite:///{tmp_path / 'fresh.db'}"
     run_migrations(url)
-    assert "external_id" in _column_names(url)
+    assert {"external_id", "last_shown_at"} <= _column_names(url)
     assert {"tasks", "source_states", "ingestion_decisions"} <= _table_names(url)
-    assert _stamped_revision(url) == "0003"
+    assert _stamped_revision(url) == "0004"
 
 
 def test_legacy_database_is_stamped_and_upgraded(tmp_path):
@@ -82,9 +82,9 @@ def test_legacy_database_is_stamped_and_upgraded(tmp_path):
 
     run_migrations(url)
 
-    assert "external_id" in _column_names(url)
+    assert {"external_id", "last_shown_at"} <= _column_names(url)
     assert {"source_states", "ingestion_decisions"} <= _table_names(url)
-    assert _stamped_revision(url) == "0003"
+    assert _stamped_revision(url) == "0004"
 
     engine = create_engine(url)
     with engine.connect() as connection:
@@ -101,7 +101,7 @@ def test_create_all_database_is_stamped_at_head(tmp_path):
 
     run_migrations(url)
 
-    assert _stamped_revision(url) == "0003"
+    assert _stamped_revision(url) == "0004"
     assert "ix_ingestion_decisions_source_item" in _index_names(url, "ingestion_decisions")
 
 
@@ -109,4 +109,18 @@ def test_run_migrations_is_idempotent(tmp_path):
     url = f"sqlite:///{tmp_path / 'twice.db'}"
     run_migrations(url)
     run_migrations(url)
-    assert _stamped_revision(url) == "0003"
+    assert _stamped_revision(url) == "0004"
+
+
+def test_pre_0015_database_without_last_shown_at_is_stamped_and_upgraded(tmp_path):
+    url = f"sqlite:///{tmp_path / 'pre0015.db'}"
+    engine = create_engine(url)
+    Base.metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE tasks DROP COLUMN last_shown_at"))
+    engine.dispose()
+
+    run_migrations(url)
+
+    assert "last_shown_at" in _column_names(url)
+    assert _stamped_revision(url) == "0004"

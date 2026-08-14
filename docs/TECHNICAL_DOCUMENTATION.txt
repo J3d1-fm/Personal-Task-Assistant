@@ -308,6 +308,31 @@ POST /api/agent/ingest/context
 
 Alias for context ingestion so external agent clients have a consistent `/api/agent/*` surface.
 
+POST /api/agent/triage/next
+
+Serves the next batch of smart-ranked active tasks as compact triage cards for
+the "human decides, agent applies" review loop. Stamps `last_shown_at` on the
+returned tasks (without touching `updated_at`), so consecutive calls page
+through the board instead of repeating cards; `cooldown_hours` controls how
+long a shown card stays excluded (default 24, 0 disables), `mark=false` peeks
+without stamping. The response carries the queue summary, the cards (with
+age_days, overdue flag, and a 280-character description snippet), and the
+count of cards skipped as recently shown.
+
+POST /api/agent/triage/apply
+
+Applies a whole list of human triage resolutions in one request. Actions:
+done, cancel, defer (requires due_at and/or reminder_at), block, assign
+(requires assignee), update (any field combination). An optional note per item
+is appended to the description as "— <UTC timestamp> (triage): <note>", the
+same convention as Telegram reply notes. Items are independent: bad ids or
+invalid resolutions come back as ok=false entries with errors while the rest
+land; each success returns the updated task and records the usual history
+event. The response ends with a fresh post-apply queue summary.
+
+The tasks table gained a nullable `last_shown_at` column for this (Alembic
+revision 0004); Firestore documents acquire the field lazily on first stamp.
+
 Reference Telegram adapter:
 
 The adapter is not part of the FastAPI runtime. It is an optional external

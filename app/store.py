@@ -2,6 +2,7 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
+from google.api_core import exceptions as google_exceptions
 from google.cloud import firestore
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -59,6 +60,9 @@ class TaskStore(Protocol):
         ...
 
     def due_reminders(self, *, now: datetime | None = None) -> list[TaskRead]:
+        ...
+
+    def mark_shown(self, task_ids: list[int], *, now: datetime | None = None) -> None:
         ...
 
 
@@ -166,6 +170,19 @@ class SqliteTaskStore:
         current = now or datetime.now(timezone.utc)
         tasks = self.list_tasks(include_done=False)
         return [task for task in tasks if is_reminder_due(task, current)]
+
+    def mark_shown(self, task_ids: list[int], *, now: datetime | None = None) -> None:
+        if not task_ids:
+            return
+        current = now or utc_now()
+        # updated_at is pinned to itself: being shown in a triage batch is not
+        # an edit and must not reshuffle updated_at-based orderings.
+        self.db.execute(
+            update(Task)
+            .where(Task.id.in_(task_ids))
+            .values(last_shown_at=current, updated_at=Task.updated_at)
+        )
+        self.db.commit()
 
 
 class FirestoreTaskStore:
@@ -402,6 +419,14 @@ class FirestoreTaskStore:
     def due_reminders(self, *, now: datetime | None = None) -> list[TaskRead]:
         current = now or datetime.now(timezone.utc)
         return [task for task in self.list_tasks(include_done=False) if is_reminder_due(task, current)]
+
+    def mark_shown(self, task_ids: list[int], *, now: datetime | None = None) -> None:
+        current = now or utc_now()
+        for task_id in task_ids:
+            try:
+                self.collection.document(str(task_id)).update({"last_shown_at": current})
+            except google_exceptions.NotFound:
+                continue
 
 
 def encode_task_data(data: dict) -> dict:

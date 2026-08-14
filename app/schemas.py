@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from enum import StrEnum
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
@@ -54,11 +55,13 @@ class TaskUpdate(BaseModel):
     due_at: datetime | None = None
     reminder_at: datetime | None = None
     reminder_last_sent_at: datetime | None = None
+    last_shown_at: datetime | None = None
 
 
 class TaskRead(TaskBase):
     id: int
     reminder_last_sent_at: datetime | None = None
+    last_shown_at: datetime | None = None
     completed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
@@ -207,3 +210,66 @@ class AgentQueueSummary(BaseModel):
 class AgentQueueRead(BaseModel):
     summary: AgentQueueSummary
     tasks: list[TaskRead]
+
+
+class TriageAction(StrEnum):
+    done = "done"
+    cancel = "cancel"
+    defer = "defer"
+    block = "block"
+    assign = "assign"
+    update = "update"
+
+
+class TriageCard(BaseModel):
+    id: int
+    title: str
+    status: TaskStatus
+    assignee: TaskAssignee
+    origin: TaskOrigin
+    priority: int
+    source_name: str | None = None
+    source_url: str | None = None
+    due_at: datetime | None = None
+    reminder_at: datetime | None = None
+    age_days: int
+    overdue: bool
+    last_shown_at: datetime | None = None
+    description_snippet: str | None = None
+
+
+class TriageBatchRead(BaseModel):
+    summary: AgentQueueSummary
+    cards: list[TriageCard]
+    skipped_recently_shown: int
+    cooldown_hours: float
+
+
+class TriageResolution(BaseModel):
+    id: int = Field(ge=1)
+    action: TriageAction
+    note: str | None = Field(default=None, min_length=1, max_length=2000)
+    status: TaskStatus | None = None
+    assignee: TaskAssignee | None = None
+    priority: int | None = Field(default=None, ge=1, le=5)
+    due_at: datetime | None = None
+    reminder_at: datetime | None = None
+
+
+class TriageApplyRequest(BaseModel):
+    resolutions: list[TriageResolution] = Field(min_length=1, max_length=100)
+
+
+class TriageApplyResultItem(BaseModel):
+    id: int
+    action: TriageAction
+    ok: bool
+    error: str | None = None
+    task: TaskRead | None = None
+
+
+class TriageApplyResult(BaseModel):
+    applied: int
+    failed: int
+    results: list[TriageApplyResultItem]
+    summary: AgentQueueSummary

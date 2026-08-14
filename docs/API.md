@@ -245,6 +245,70 @@ curl "$TASK_TRACKER_URL/api/agent/queue/summary" \
   -H "Authorization: Bearer $TASK_TRACKER_API_KEY"
 ```
 
+## Triage in Batches
+
+The triage pair exists for the "human decides, agent applies" review loop: one
+call fetches the next portion of cards to discuss, one call applies all the
+human's resolutions. No client-side bookkeeping of what was already shown is
+needed.
+
+`POST /api/agent/triage/next` returns the top smart-ranked active tasks as
+compact cards and stamps each returned task's `last_shown_at`, so the next call
+automatically serves the *following* portion instead of repeating cards:
+
+```bash
+curl -X POST "$TASK_TRACKER_URL/api/agent/triage/next?limit=10" \
+  -H "Authorization: Bearer $TASK_TRACKER_API_KEY"
+```
+
+Query parameters:
+
+- `limit`: batch size, 1-50 (default 10)
+- `cooldown_hours`: how long a shown card stays excluded, 0-336 (default 24;
+  `0` disables the exclusion)
+- `mark`: `false` turns the call into a pure peek that stamps nothing
+  (default `true`)
+
+Response: the queue `summary`, `cards` (id, title, status, assignee, origin,
+priority, source fields, due/reminder dates, `age_days`, `overdue`, a
+280-character `description_snippet`), `skipped_recently_shown`, and the
+effective `cooldown_hours`. Stamping `last_shown_at` deliberately does not
+touch `updated_at`, so triage reads never reshuffle `updated`-sorted views.
+
+`POST /api/agent/triage/apply` applies a whole batch of resolutions in one
+request instead of N sequential PATCHes:
+
+```bash
+curl -X POST "$TASK_TRACKER_URL/api/agent/triage/apply" \
+  -H "Authorization: Bearer $TASK_TRACKER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"resolutions": [
+        {"id": 281, "action": "done", "note": "передано, подтверждение пришло"},
+        {"id": 142, "action": "cancel"},
+        {"id": 242, "action": "defer", "reminder_at": "2026-09-09T09:00:00Z"},
+        {"id": 5,   "action": "assign", "assignee": "codex"},
+        {"id": 196, "action": "update", "priority": 1}
+      ]}'
+```
+
+Actions map to the human's triage verbs:
+
+- `done` → `status=done` («закрывай»)
+- `cancel` → `status=cancelled` («не моё / мусор»)
+- `defer` → requires `due_at` and/or `reminder_at` («перенеси на…»)
+- `block` → `status=blocked` («ждём внешнего ответа»)
+- `assign` → requires `assignee`, optional `status` («бери в работу»)
+- `update` → any combination of `status`, `assignee`, `priority`, `due_at`,
+  `reminder_at`, `note`
+
+Every action accepts an optional `note`, appended to the description as
+`— <UTC timestamp> (triage): <note>` — same convention as Telegram reply notes.
+Items are applied independently: an unknown id or an invalid resolution
+produces an `ok=false` entry with an `error` while the rest of the batch still
+lands. The response returns per-item results (each successful item carries the
+updated task — a built-in readback) plus a fresh post-apply `summary`, and
+history events are recorded per applied change exactly like `PATCH`.
+
 ## Claim the Next Task
 
 `POST /api/agent/claim` atomically assigns the top-ranked claimable task to the

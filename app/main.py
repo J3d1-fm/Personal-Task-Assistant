@@ -32,6 +32,13 @@ from app.schemas import (
     TaskCreate,
     TaskRead,
     TaskUpdate,
+    TriageAction,
+    TriageApplyRequest,
+    TriageApplyResult,
+    TriageApplyResultItem,
+    TriageBatchRead,
+    TriageCard,
+    TriageResolution,
 )
 from app.store import DuplicateExternalIdError, get_task_store
 
@@ -401,11 +408,156 @@ def due_reminders(db: Session = Depends(get_db), now: datetime | None = None) ->
     return get_task_store(db).due_reminders(now=now)
 
 
+@app.post(
+    "/api/agent/triage/next",
+    response_model=TriageBatchRead,
+    dependencies=[Depends(require_api_key_or_user)],
+)
+def triage_next(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=10, ge=1, le=50),
+    cooldown_hours: float = Query(default=24.0, ge=0, le=24 * 14),
+    mark: bool = Query(default=True),
+) -> TriageBatchRead:
+    now = datetime.now(timezone.utc)
+    store = get_task_store(db)
+    tasks = store.list_tasks(include_done=False)
+    active = [task for task in tasks if _is_active(task)]
+    cutoff = now - timedelta(hours=cooldown_hours)
+    eligible: list[TaskRead] = []
+    skipped = 0
+    for task in _sort_tasks_for_agent(active, sort="smart", now=now):
+        shown = _normalized_datetime(task.last_shown_at)
+        if cooldown_hours > 0 and shown is not None and shown > cutoff:
+            skipped += 1
+            continue
+        eligible.append(task)
+    batch = eligible[:limit]
+    if mark and batch:
+        store.mark_shown([task.id for task in batch], now=now)
+    return TriageBatchRead(
+        summary=_agent_queue_summary(tasks, now=now),
+        cards=[_triage_card(task, now=now, shown_at=now if mark else None) for task in batch],
+        skipped_recently_shown=skipped,
+        cooldown_hours=cooldown_hours,
+    )
+
+
+@app.post(
+    "/api/agent/triage/apply",
+    response_model=TriageApplyResult,
+    dependencies=[Depends(require_api_key_or_user)],
+)
+def triage_apply(
+    payload: TriageApplyRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> TriageApplyResult:
+    store = get_task_store(db)
+    now = datetime.now(timezone.utc)
+    results: list[TriageApplyResultItem] = []
+    for resolution in payload.resolutions:
+        previous = store.get_task(resolution.id)
+        if previous is None:
+            results.append(_triage_failure(resolution, "Task not found"))
+            continue
+        try:
+            update_payload = _resolution_to_update(resolution, previous, now=now)
+        except ValueError as exc:
+            results.append(_triage_failure(resolution, str(exc)))
+            continue
+        try:
+            task = store.update_task(resolution.id, update_payload)
+        except DuplicateExternalIdError as exc:
+            results.append(_triage_failure(resolution, str(exc)))
+            continue
+        if task is None:
+            results.append(_triage_failure(resolution, "Task not found"))
+            continue
+        background_tasks.add_task(
+            record_task_event,
+            choose_update_action(task, previous),
+            task,
+            previous=previous,
+            note=f"triage:{resolution.action}",
+        )
+        results.append(
+            TriageApplyResultItem(id=resolution.id, action=resolution.action, ok=True, task=task)
+        )
+    applied = sum(1 for item in results if item.ok)
+    return TriageApplyResult(
+        applied=applied,
+        failed=len(results) - applied,
+        results=results,
+        summary=_agent_queue_summary(store.list_tasks(include_done=False), now=now),
+    )
+
+
 def _create_task_or_conflict(store, payload: TaskCreate) -> TaskRead:
     try:
         return store.create_task(payload)
     except DuplicateExternalIdError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+_TRIAGE_STATUS_BY_ACTION = {
+    TriageAction.done: TaskStatus.done,
+    TriageAction.cancel: TaskStatus.cancelled,
+    TriageAction.block: TaskStatus.blocked,
+}
+
+_TRIAGE_SNIPPET_LIMIT = 280
+
+
+def _triage_card(task: TaskRead, *, now: datetime, shown_at: datetime | None = None) -> TriageCard:
+    created = _normalized_datetime(task.created_at) or now
+    snippet = None
+    if task.description:
+        flattened = " ".join(task.description.split())
+        snippet = flattened[:_TRIAGE_SNIPPET_LIMIT] + ("…" if len(flattened) > _TRIAGE_SNIPPET_LIMIT else "")
+    return TriageCard(
+        id=task.id,
+        title=task.title,
+        status=task.status,
+        assignee=task.assignee,
+        origin=task.origin,
+        priority=task.priority,
+        source_name=task.source_name,
+        source_url=task.source_url,
+        due_at=task.due_at,
+        reminder_at=task.reminder_at,
+        age_days=max(0, (now - created).days),
+        overdue=_is_overdue(task, now),
+        last_shown_at=shown_at or task.last_shown_at,
+        description_snippet=snippet,
+    )
+
+
+def _triage_failure(resolution: TriageResolution, error: str) -> TriageApplyResultItem:
+    return TriageApplyResultItem(id=resolution.id, action=resolution.action, ok=False, error=error)
+
+
+def _resolution_to_update(resolution: TriageResolution, previous: TaskRead, *, now: datetime) -> TaskUpdate:
+    updates: dict = {}
+    forced_status = _TRIAGE_STATUS_BY_ACTION.get(resolution.action)
+    if forced_status is not None:
+        updates["status"] = forced_status
+    if resolution.action == TriageAction.defer and resolution.due_at is None and resolution.reminder_at is None:
+        raise ValueError("defer requires due_at or reminder_at")
+    if resolution.action == TriageAction.assign and resolution.assignee is None:
+        raise ValueError("assign requires assignee")
+    for field in ("status", "assignee", "priority", "due_at", "reminder_at"):
+        value = getattr(resolution, field)
+        if value is not None:
+            updates.setdefault(field, value)
+    if resolution.note:
+        stamp = now.strftime("%Y-%m-%d %H:%M")
+        note_line = f"— {stamp} (triage): {resolution.note}"
+        description = (previous.description or "").rstrip()
+        updates["description"] = f"{description}\n\n{note_line}" if description else note_line
+    if not updates:
+        raise ValueError("update requires at least one field or a note")
+    return TaskUpdate(**updates)
 
 
 def _is_active(task: TaskRead) -> bool:

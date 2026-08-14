@@ -222,6 +222,8 @@ Main endpoints:
 - `DELETE /api/tasks/{task_id}`
 - `GET /api/agent/queue`
 - `GET /api/agent/queue/summary`
+- `POST /api/agent/triage/next`
+- `POST /api/agent/triage/apply`
 - `POST /api/agent/claim`
 - `POST /api/agent/tasks`
 - `POST /api/agent/ingest/context`
@@ -231,6 +233,12 @@ Main endpoints:
 `POST /api/agent/claim` atomically hands the top-ranked Codex backlog task to
 the calling agent and moves it to `in_progress`, so several parallel agents
 never pick up the same work item.
+
+`POST /api/agent/triage/next` + `POST /api/agent/triage/apply` power the
+human-in-the-loop review: the first serves the next batch of smart-ranked cards
+(stamping `last_shown_at` so batches never repeat), the second applies a whole
+list of human resolutions — done / cancel / defer / block / assign / update,
+each with an optional dated note — in one call. See `docs/API.md`.
 
 For day-to-day PM usage, see `docs/PM_GUIDE.md`. For integration examples, see
 `docs/API.md`.

@@ -1,5 +1,47 @@
 Personal Task Assistant Changelog
 
+Version 0.15.0 - 2026-08-15
+
+Batch triage — the "human decides, agent applies" loop as a first-class API.
+Born from the 2026-08-14 marathon triage session (164 active tasks worked down
+to 17 by hand): the agent had to rebuild every "next ten" portion manually,
+re-showed cards it had already presented (the tracker had no memory of that),
+and applied every human resolution as its own PATCH round-trip.
+
+- Added `POST /api/agent/triage/next`: returns the next batch of smart-ranked
+  active tasks as compact triage cards (id, title, status, assignee, origin,
+  priority, source fields, due/reminder dates, age_days, overdue flag, and a
+  280-character description snippet) plus the queue summary. Each returned
+  task is stamped `last_shown_at`, so consecutive calls page through the board
+  instead of repeating cards. `cooldown_hours` (default 24, 0 disables)
+  controls how long a shown card stays excluded, `limit` sizes the batch
+  (default 10), and `mark=false` turns the call into a stamp-free peek. The
+  response also reports how many cards were skipped as recently shown.
+- Added `POST /api/agent/triage/apply`: applies a whole list of human
+  resolutions in one request instead of N sequential PATCHes. Actions mirror
+  the triage verbs: `done` («закрывай»), `cancel` («не моё / мусор»),
+  `defer` (requires due_at and/or reminder_at), `block`, `assign` (requires
+  assignee), and `update` (any combination of status/assignee/priority/dates).
+  Every action takes an optional `note`, appended to the description as
+  "— <UTC timestamp> (triage): <note>" — the same dated-note convention the
+  Telegram reply flow uses. Items apply independently: unknown ids and invalid
+  resolutions come back as ok=false entries with errors while the rest of the
+  batch lands, each success returns the updated task as a built-in readback,
+  history events are recorded per applied change, and the response ends with a
+  fresh post-apply queue summary.
+- Added the nullable `tasks.last_shown_at` column (Alembic revision 0004) with
+  the stamping heuristic updated to recognize pre-0.15 databases; Firestore
+  documents acquire the field lazily. Stamping a card as shown deliberately
+  does not bump `updated_at` (the SQL store pins the column to itself), so
+  triage reads never reshuffle `updated`-sorted views — covered by a
+  dedicated regression test.
+- Documented both endpoints in README.md, docs/API.md (with curl examples and
+  the verb-to-action mapping), and docs/TECHNICAL_DOCUMENTATION.txt. Added
+  tests for batch paging, cooldown expiry, the peek mode, the updated_at
+  invariant, mixed-batch apply, per-item error isolation, and the note
+  convention (171 tests total).
+- Bumped the app version from 0.14.0 to 0.15.0.
+
 Version 0.14.0 - 2026-08-07
 
 Voice answers and a neural voice:

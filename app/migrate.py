@@ -17,7 +17,7 @@ from app.config import get_settings
 ROOT = Path(__file__).resolve().parents[1]
 
 INITIAL_REVISION = "0001"
-HEAD_REVISION = "0003"
+HEAD_REVISION = "0004"
 
 
 def _alembic_config(database_url: str) -> Config:
@@ -38,8 +38,11 @@ def run_migrations(database_url: str | None = None) -> None:
         has_version_table = inspector.has_table("alembic_version")
         if has_tasks_table and not has_version_table:
             columns = {column["name"] for column in inspector.get_columns("tasks")}
-            if inspector.has_table("source_states") and inspector.has_table("ingestion_decisions"):
+            has_ingestion_tables = inspector.has_table("source_states") and inspector.has_table("ingestion_decisions")
+            if has_ingestion_tables and "last_shown_at" in columns:
                 revision = HEAD_REVISION
+            elif has_ingestion_tables:
+                revision = "0003"
             elif "external_id" in columns:
                 revision = "0002"
             else:
