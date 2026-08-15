@@ -63,6 +63,24 @@ def test_plan_review_notifications_announces_once_and_reannounces_on_reentry():
     assert [t["id"] for t in to_announce] == [1]
 
 
+def test_review_request_prefers_agent_work_report():
+    task = _task(9, status="waiting_review", assignee="codex", title="draft reply")
+    task["description"] = (
+        "long original context that should not win\n\n"
+        "— 2026-08-15 07:30 (work): Составил черновик ответа.\nПроверить адресата."
+    )
+    text = watch.format_review_request(task, "ru")
+    assert "🛠 Отчёт агента:" in text
+    assert "Составил черновик ответа." in text
+    assert "long original context" not in text
+
+    plain = _task(10, status="waiting_review", title="no report")
+    plain["description"] = "just a description"
+    text = watch.format_review_request(plain, "ru")
+    assert "Отчёт агента" not in text
+    assert "just a description" in text
+
+
 def test_agent_backlog_filters_codex_backlog_only():
     tasks = [
         _task(1, assignee="codex", status="backlog"),

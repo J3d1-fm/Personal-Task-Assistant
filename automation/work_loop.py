@@ -51,11 +51,17 @@ spent:
    here, do not fake it: leave a note via task_assistant_update_task (add to
    the description what remains) and either finish it to review with your
    findings or mark it blocked with the reason.
-4. Call task_assistant_finish_task to send your result to waiting_review.
+4. Call task_assistant_finish_task with a detailed hand-off report — it is a
+   required parameter, and it is what the human reads in the review
+   announcement and the daily digest. Structure it as: WHAT was done, HOW it
+   was done (steps, sources used), what the human should VERIFY, and what
+   REMAINS (if anything). Report only actions you actually performed — never
+   claim work you could not do with these tools.
 
 Never set status to "done" — that is the human's decision. Never inflate \
-priority. Be concise. When you stop, write a short plain-text summary of what \
-you claimed and what state you left each task in."""
+priority. Be concise everywhere except the finish report — there, be \
+specific. When you stop, write a short plain-text summary of what you \
+claimed and what state you left each task in."""
 
 FINAL_INSTRUCTION = (
     "Work the codex queue now. Claim tasks one at a time, act, and finish each to "
@@ -135,7 +141,15 @@ async def _run(url: str, api_key: str, max_tasks: int, model: str) -> list[dict]
                     claims += 1
                     last_claim = claimed
                 if name == "task_assistant_finish_task" and last_claim is not None:
-                    worked.append(last_claim)
+                    # Prefer the finish result: it carries the appended work
+                    # report, which the digest renders for the human.
+                    finished = last_claim
+                    if result_text.strip().startswith("{"):
+                        try:
+                            finished = json.loads(result_text)
+                        except json.JSONDecodeError:
+                            pass
+                    worked.append(finished)
                     last_claim = None
                 tool_results.append(
                     {"type": "tool_result", "tool_use_id": block.id, "content": result_text}

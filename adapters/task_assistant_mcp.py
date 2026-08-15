@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 import httpx
@@ -179,6 +179,25 @@ class TaskIdInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_id: int = Field(..., description="Numeric task id, e.g. 42", ge=1)
+
+
+class FinishTaskInput(BaseModel):
+    """Input for finishing a task to review with a mandatory hand-off report."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    task_id: int = Field(..., description="Numeric task id, e.g. 42", ge=1)
+    report: str = Field(
+        ...,
+        min_length=30,
+        max_length=4000,
+        description=(
+            "Hand-off report for the human reviewer: what was done, how, what to "
+            "verify, and what (if anything) remains. Written in the assistant "
+            "language. E.g. 'Разобрал тред и составил черновик ответа (в описании "
+            "ниже). Проверить сумму в п.2. Осталось: согласовать дату звонка.'"
+        ),
+    )
 
 
 class IngestTaskItem(BaseModel):
@@ -462,26 +481,43 @@ async def task_assistant_claim_task(params: EmptyInput) -> str:
         "openWorldHint": True,
     },
 )
-async def task_assistant_finish_task(params: TaskIdInput) -> str:
-    """Hand finished agent work back to the human by moving it to waiting_review.
+async def task_assistant_finish_task(params: FinishTaskInput) -> str:
+    """Hand finished agent work back to the human with a mandatory report.
 
-    This is the normal end of the claim -> work -> review loop: the human
-    stays in control and closes the task after checking the result. Use
+    This is the normal end of the claim -> work -> review loop: the task moves
+    to waiting_review and the report is appended to its description as a dated
+    "— <UTC time> (work): ..." note, so the human sees WHAT was done and HOW —
+    in the tracker, in the review announcement, and in the daily digest. The
+    human stays in control and closes the task after checking the result. Use
     task_assistant_update_task with status="done" only when the human has
     explicitly said the task is complete.
 
     Args:
-        params (TaskIdInput):
+        params (FinishTaskInput):
             - task_id (int): The task to finish, e.g. 42.
+            - report (str): Hand-off report (30-4000 chars): what was done,
+              how, what to verify, what remains.
 
     Returns:
-        str: JSON of the updated task with status "waiting_review".
+        str: JSON of the updated task with status "waiting_review" and the
+        report appended to its description.
     """
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    note = f"— {stamp} (work): {params.report}"
     try:
-        task = await _request("PATCH", f"/api/tasks/{params.task_id}", body={"status": "waiting_review"})
+        task = await _request("GET", f"/api/tasks/{params.task_id}")
+        description = str(task.get("description") or "").rstrip()
+        updated = await _request(
+            "PATCH",
+            f"/api/tasks/{params.task_id}",
+            body={
+                "status": "waiting_review",
+                "description": f"{description}\n\n{note}" if description else note,
+            },
+        )
     except Exception as exc:
         return _error_text(exc)
-    return _task_json(task)
+    return _task_json(updated)
 
 
 @mcp.tool(

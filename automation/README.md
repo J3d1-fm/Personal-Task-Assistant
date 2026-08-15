@@ -12,7 +12,11 @@ on Linux (both via `install.sh`), or the self-scheduling `ritual` service in
   board, so you always get a report even if nothing else runs.
 - **Agent work loop (opt-in):** if enabled, an agent works the codex queue
   (claim → do what it safely can → finish to `waiting_review`) through the MCP
-  server, and the digest reports what it did.
+  server, and the digest reports what it did. Every finished task carries a
+  mandatory hand-off report (what was done, how, what to verify, what
+  remains): `finish_task` appends it to the task description as a dated
+  `(work)` note, the watch loop's review announcement leads with it, and the
+  daily digest prints it under the task in "Worked this cycle".
 
 ## Prerequisites
 

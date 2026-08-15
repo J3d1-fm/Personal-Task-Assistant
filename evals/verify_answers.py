@@ -148,9 +148,21 @@ async def run(args: argparse.Namespace) -> int:
                 claimed = json.loads(await call("task_assistant_claim_task"))
                 print(f"  claimed #{claimed['id']} {claimed['title']!r} -> {claimed['status']}")
                 assert claimed["status"] == "in_progress"
-                finished = json.loads(await call("task_assistant_finish_task", {"task_id": claimed["id"]}))
+                finished = json.loads(
+                    await call(
+                        "task_assistant_finish_task",
+                        {
+                            "task_id": claimed["id"],
+                            "report": (
+                                "Write-loop check: claimed the top task and finished it "
+                                "back to review; verify the status flip only."
+                            ),
+                        },
+                    )
+                )
                 print(f"  finished #{finished['id']} -> {finished['status']}")
                 assert finished["status"] == "waiting_review"
+                assert "(work):" in (finished.get("description") or "")
                 print("  Board mutated: re-run evals/seed_eval_board.py before the next evaluation.")
 
             if failures:

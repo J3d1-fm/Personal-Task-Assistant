@@ -50,13 +50,14 @@ from notify import (  # noqa: E402
     review_reply_markup,
     send_message,
 )
+from work_report import latest_work_report  # noqa: E402
 
 DEFAULT_URL = os.getenv("TASK_TRACKER_URL", "http://127.0.0.1:8000")
 DEFAULT_STATE = ROOT / "automation" / ".watch_state.json"
 
 WATCH_STRINGS = {
-    "en": {"review": "👀 Review needed", "reminder": "⏰ Reminder", "due": "due"},
-    "ru": {"review": "👀 Нужно ревью", "reminder": "⏰ Напоминание", "due": "срок"},
+    "en": {"review": "👀 Review needed", "reminder": "⏰ Reminder", "due": "due", "report": "🛠 Agent report:"},
+    "ru": {"review": "👀 Нужно ревью", "reminder": "⏰ Напоминание", "due": "срок", "report": "🛠 Отчёт агента:"},
 }
 
 
@@ -122,7 +123,13 @@ def format_review_request(task: dict, lang: str = "en") -> str:
         f"P{task['priority']} · {task['assignee']} · waiting_review",
     ]
     description = (task.get("description") or "").strip()
-    if description:
+    report = latest_work_report(description)
+    if report:
+        # The agent's hand-off report is what the reviewer needs first —
+        # show it labeled and with more room than a generic description head.
+        snippet = report[:900] + ("…" if len(report) > 900 else "")
+        lines += ["", t["report"], snippet]
+    elif description:
         snippet = description[:400] + ("…" if len(description) > 400 else "")
         lines += ["", snippet]
     if task.get("source_url"):

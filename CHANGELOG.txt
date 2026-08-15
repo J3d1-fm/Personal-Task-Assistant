@@ -1,5 +1,43 @@
 Personal Task Assistant Changelog
 
+Version 0.16.0 - 2026-08-15
+
+Mandatory work reports — the agent must now explain WHAT it did and HOW,
+and the report reaches the owner through every channel. Until now
+finish_task silently flipped a task to waiting_review; notes were optional
+prompt-level advice, and the digest listed finished work as bare one-liners.
+
+- `task_assistant_finish_task` now requires a `report` parameter (30-4000
+  chars): what was done, how it was done, what the human should verify, and
+  what remains. The tool appends it to the task description as a dated
+  "— <UTC time> (work): ..." note — the same dated-note convention as
+  Telegram replies and triage notes — in the same PATCH that moves the task
+  to waiting_review, so a finish without a hand-off report is impossible at
+  the tool level, not just discouraged in the prompt.
+- The watch loop's review announcement now leads with the agent's report
+  (labeled "Отчёт агента"/"Agent report", up to 900 chars) instead of the
+  head of a possibly long description, so the Telegram ping that asks for
+  review carries the answer to "что сделано и как" right next to the
+  ✅/🔁/✋ buttons. Tasks reviewed without an agent report keep the old
+  description snippet.
+- The daily digest's "Worked this cycle" section now prints each finished
+  task's report as quoted lines under its bullet (extracted by the new
+  automation/work_report.py parser; trimmed at 900 chars), and the spoken
+  digest adds that detailed reports are in the text digest. The API work
+  runner now records the finish result (which carries the report) rather
+  than the claim-time snapshot; the claude runner's board diff already
+  returned post-finish tasks.
+- The worker system prompt requires the structured report (WHAT / HOW /
+  VERIFY / REMAINS) and forbids claiming work the tools cannot actually do.
+- Tests: finish flow asserts the appended report, a too-short report fails
+  validation, the digest renders report lines, and the review announcement
+  prefers the report over the description (174 tests total). The MCP eval
+  gate was re-run: 10/10 seeded-board answers verified through the real
+  stdio client and the claim -> finish write loop passes with the new
+  required parameter (evals/verify_answers.py updated). Docs updated:
+  docs/MCP.md, automation/README.md, docs/TECHNICAL_DOCUMENTATION.txt.
+- Bumped the app version from 0.15.0 to 0.16.0.
+
 Version 0.15.0 - 2026-08-15
 
 Batch triage — the "human decides, agent applies" loop as a first-class API.

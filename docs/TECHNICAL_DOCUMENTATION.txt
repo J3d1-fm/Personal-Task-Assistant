@@ -333,6 +333,21 @@ event. The response ends with a fresh post-apply queue summary.
 The tasks table gained a nullable `last_shown_at` column for this (Alembic
 revision 0004); Firestore documents acquire the field lazily on first stamp.
 
+Agent work reports (0.16.0):
+
+The MCP tool task_assistant_finish_task now requires a `report` parameter
+(30-4000 chars): the agent's hand-off describing what was done, how, what the
+human should verify, and what remains. The tool appends it to the task
+description as "— <UTC time> (work): <report>" in the same PATCH that moves
+the task to waiting_review. automation/work_report.py extracts the latest
+such note; the watch loop's review announcement leads with it (labeled
+"Отчёт агента"/"Agent report", up to 900 chars) and the daily digest prints
+it as quoted lines under each task in "Worked this cycle". The spoken digest
+mentions that detailed reports are in the text digest. The API work runner
+records the finish result (which carries the report) rather than the
+claim-time snapshot; the claude runner's board diff already returns
+post-finish tasks.
+
 Reference Telegram adapter:
 
 The adapter is not part of the FastAPI runtime. It is an optional external

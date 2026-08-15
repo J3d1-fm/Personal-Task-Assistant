@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "adapters"))
 
@@ -80,8 +81,23 @@ def test_claim_and_finish_flow():
     empty = run(mcp_mod.task_assistant_claim_task(mcp_mod.EmptyInput()))
     assert empty.startswith("No claimable task")
 
-    finished = json.loads(run(mcp_mod.task_assistant_finish_task(mcp_mod.TaskIdInput(task_id=claimed["id"]))))
+    finished = json.loads(
+        run(
+            mcp_mod.task_assistant_finish_task(
+                mcp_mod.FinishTaskInput(
+                    task_id=claimed["id"],
+                    report="Разобрал задачу, черновик готов в описании; проверить получателя.",
+                )
+            )
+        )
+    )
     assert finished["status"] == "waiting_review"
+    assert "(work): Разобрал задачу" in finished["description"]
+
+
+def test_finish_requires_substantial_report():
+    with pytest.raises(ValidationError):
+        mcp_mod.FinishTaskInput(task_id=1, report="ok")
 
 
 def test_queue_and_summary():
@@ -179,7 +195,16 @@ def test_worker_mode_refuses_done_and_cancelled(monkeypatch):
         run(mcp_mod.task_assistant_update_task(mcp_mod.UpdateTaskInput(task_id=created["id"], status="blocked")))
     )
     assert blocked["status"] == "blocked"
-    finished = json.loads(run(mcp_mod.task_assistant_finish_task(mcp_mod.TaskIdInput(task_id=created["id"]))))
+    finished = json.loads(
+        run(
+            mcp_mod.task_assistant_finish_task(
+                mcp_mod.FinishTaskInput(
+                    task_id=created["id"],
+                    report="Rail check: verified blocked transition stays allowed, sending to review.",
+                )
+            )
+        )
+    )
     assert finished["status"] == "waiting_review"
 
 

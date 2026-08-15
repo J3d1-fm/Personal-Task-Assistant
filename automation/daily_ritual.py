@@ -149,6 +149,25 @@ def _section(pair: tuple[str, str], tasks: list[dict], t: dict) -> list[str]:
     return [f"### {title} ({len(tasks)})", *[_line(task, t) for task in tasks], ""]
 
 
+def _worked_lines(worked: list[dict], t: dict) -> list[str]:
+    """Bullets for tasks the agent finished, each with its hand-off report."""
+    try:
+        from work_report import latest_work_report
+    except ImportError:
+        sys.path.insert(0, str(ROOT / "automation"))
+        from work_report import latest_work_report
+
+    lines: list[str] = []
+    for task in worked:
+        lines.append(_line(task, t) + " → waiting_review")
+        report = latest_work_report(task.get("description"))
+        if report:
+            if len(report) > 900:
+                report = report[:900] + "…"
+            lines += [f"  > {row}" for row in report.splitlines() if row.strip()]
+    return lines
+
+
 def render_digest(situation: Situation, worked: list[dict] | None = None, lang: str = "en") -> str:
     """Human-facing daily digest. Ordered by what needs the human first."""
     s = situation
@@ -180,7 +199,7 @@ def render_digest(situation: Situation, worked: list[dict] | None = None, lang: 
         lines += [t["no_work_run"], ""]
     else:
         lines += [f"### {t['worked']} ({len(worked)})"]
-        lines += ([_line(task, t) + " → waiting_review" for task in worked] if worked else [t["nothing_worked"]])
+        lines += _worked_lines(worked, t) if worked else [t["nothing_worked"]]
         lines += ["", *(_section(t["still_ready"], s.agent_ready, t) if s.agent_ready else [])]
     return "\n".join(lines).rstrip() + "\n"
 
@@ -212,6 +231,7 @@ def _render_spoken_ru(s: Situation, worked: list[dict] | None) -> str:
         sentences.append(f"Дедлайн в ближайшие сутки у {ru_plural(len(s.due_soon), 'задачи', 'задач', 'задач')}.")
     if worked:
         sentences.append(f"Агент отправил в ревью: {tasks_of(worked)}.")
+        sentences.append("Подробные отчёты по каждой задаче — в текстовом дайджесте.")
     elif s.agent_ready:
         sentences.append(f"Для агента готово: {len(s.agent_ready)}.")
     return " ".join(sentences)
@@ -245,6 +265,7 @@ def render_spoken(situation: Situation, worked: list[dict] | None = None, lang: 
     if worked:
         titles = ", ".join(t["title"] for t in worked[:3])
         sentences.append(f"The agent finished {plural(len(worked), 'task')} to review: {titles}.")
+        sentences.append("Detailed reports for each are in the text digest.")
     elif s.agent_ready:
         sentences.append(f"{plural(len(s.agent_ready), 'task')} ready for the agent.")
     return " ".join(sentences)

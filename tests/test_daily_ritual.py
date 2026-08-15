@@ -81,6 +81,25 @@ def test_digest_reports_worked_tasks():
     assert "waiting_review" in text
 
 
+def test_digest_shows_work_report_under_worked_task():
+    worked = [
+        _task(
+            id=9,
+            title="did a thing",
+            assignee="codex",
+            description=(
+                "original context\n\n"
+                "— 2026-07-07 14:59 (work): Собрал сводку по треду.\n"
+                "Проверить сумму в п.2. Осталось: согласовать дату."
+            ),
+        )
+    ]
+    text = render_digest(build_situation([], NOW), worked=worked)
+    assert "  > Собрал сводку по треду." in text
+    assert "  > Проверить сумму в п.2. Осталось: согласовать дату." in text
+    assert "original context" not in text
+
+
 def test_empty_board_is_all_clear():
     text = render_digest(build_situation([], NOW))
     assert "0 active" in text

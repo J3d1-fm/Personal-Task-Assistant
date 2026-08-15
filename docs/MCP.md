@@ -15,7 +15,7 @@ running Personal Task Assistant instance (Local Mode or hosted).
 | `task_assistant_get_queue` | Queue metrics + ranked task list with filters |
 | `task_assistant_queue_summary` | Metrics only — cheapest polling call |
 | `task_assistant_claim_task` | Atomically take the next codex backlog task |
-| `task_assistant_finish_task` | Hand finished work back as `waiting_review` |
+| `task_assistant_finish_task` | Hand finished work back as `waiting_review` with a mandatory hand-off report (appended to the description as a dated `(work)` note; surfaces in review announcements and the daily digest) |
 | `task_assistant_create_task` | Create one task (external_id supported) |
 | `task_assistant_update_task` | Change status, owner, priority, dates, text |
 | `task_assistant_list_tasks` | Board-ordered list with pagination |
