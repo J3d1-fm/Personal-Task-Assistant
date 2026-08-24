@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+import telegram_business
 
 TASK_PREFIX_RE = re.compile(
     r"^\s*(?:(p[1-5])\s+)?(codex|agent|ai|me|human|review|blocked|todo)\s*:\s*(.+?)\s*$",
@@ -271,6 +272,7 @@ class AdapterConfig:
     dry_run: bool
     once: bool
     bot_id: int = 0
+    business: telegram_business.BusinessConfig | None = None
 
 
 @dataclass
@@ -360,6 +362,7 @@ def load_config() -> AdapterConfig:
         dry_run=args.dry_run,
         once=args.once,
         bot_id=int(default_source_id.rsplit(":", 1)[1]),
+        business=telegram_business.load_business_config(),
     )
 
 
@@ -415,9 +418,12 @@ def write_offset(path: Path, offset: int) -> None:
 
 
 def get_updates(config: AdapterConfig, offset: int | None) -> list[dict[str, Any]]:
+    allowed_updates = ["message", "edited_message", "callback_query"]
+    if config.business is not None:
+        allowed_updates.extend(telegram_business.BUSINESS_UPDATE_TYPES)
     params: dict[str, Any] = {
         "timeout": config.poll_timeout,
-        "allowed_updates": json.dumps(["message", "edited_message", "callback_query"]),
+        "allowed_updates": json.dumps(allowed_updates),
     }
     if offset is not None:
         params["offset"] = offset
@@ -956,10 +962,40 @@ def handle_voice_message(config: AdapterConfig, message: dict[str, Any]) -> None
     )
 
 
-def process_update(config: AdapterConfig, update: dict[str, Any]) -> RunMetrics:
+def _merge_business_counts(metrics: RunMetrics, counts: dict[str, int] | None) -> None:
+    for field in ("items_checked", "candidates", "created", "duplicates", "ignored", "suppressed"):
+        setattr(metrics, field, getattr(metrics, field) + int((counts or {}).get(field, 0)))
+
+
+def _business_active(config: AdapterConfig, business_state: dict[str, Any] | None) -> bool:
+    return config.business is not None and business_state is not None and not config.dry_run
+
+
+def process_update(
+    config: AdapterConfig, update: dict[str, Any], business_state: dict[str, Any] | None = None
+) -> RunMetrics:
     metrics = RunMetrics()
+    if telegram_business.is_business_update(update):
+        if _business_active(config, business_state):
+            try:
+                _merge_business_counts(
+                    metrics, telegram_business.handle_business_update(config, business_state, update)
+                )
+            except Exception as exc:  # the business side-channel must never break polling
+                print(f"business update failed: {sanitize_error(exc, config)}", file=sys.stderr)
+        return metrics
     callback = update.get("callback_query")
     if callback is not None:
+        if str(callback.get("data") or "").startswith("cand:"):
+            message = callback.get("message") or {}
+            if _business_active(config, business_state) and message and is_allowed_chat(config, message):
+                try:
+                    _merge_business_counts(
+                        metrics, telegram_business.handle_business_callback(config, business_state, callback)
+                    )
+                except Exception as exc:  # same guard: candidate cards must not kill the loop
+                    print(f"business callback failed: {sanitize_error(exc, config)}", file=sys.stderr)
+            return metrics
         handle_callback(config, callback)
         return metrics
     message = update.get("message") or update.get("edited_message") or {}
@@ -1018,6 +1054,9 @@ def process_update(config: AdapterConfig, update: dict[str, Any]) -> RunMetrics:
 
 def main() -> int:
     config = load_config()
+    business_state: dict[str, Any] | None = None
+    if config.business is not None and not config.dry_run:
+        business_state = telegram_business.load_state(config.business.state_path)
     offset = read_offset(config.state_path)
     pending_metrics = RunMetrics()
     last_health_report_at = 0.0
@@ -1049,10 +1088,17 @@ def main() -> int:
             continue
         retry_delay = max(1.0, config.poll_interval)
         for update in updates:
-            pending_metrics.add(process_update(config, update))
+            pending_metrics.add(process_update(config, update, business_state))
             offset = int(update["update_id"]) + 1
             if not config.dry_run:
                 write_offset(config.state_path, offset)
+        if business_state is not None:
+            try:
+                _merge_business_counts(pending_metrics, telegram_business.tick(config, business_state))
+            except Exception as exc:  # analysis is best-effort; polling must survive
+                print(f"business tick failed: {sanitize_error(exc, config)}", file=sys.stderr)
+            if telegram_business.consume_dirty(business_state):
+                telegram_business.save_state(config.business.state_path, business_state)
         now = time.monotonic()
         if not config.dry_run and (config.once or now - last_health_report_at >= config.health_report_interval):
             report_source_health(config, status="healthy", metrics=pending_metrics)

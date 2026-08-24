@@ -40,6 +40,10 @@ It provides:
 - A connector contract with durable source health and ingestion-decision receipts.
 - A reference Telegram polling adapter that demonstrates heartbeat reporting,
   ignored-item memory, fingerprint-aware replay, and idempotent task ingest.
+- Opt-in Telegram Business ingestion: connect the bot to your own Telegram
+  account (chat automation) and it read-only harvests task candidates from
+  your private chats — direct asks and your own "ok, will do" commitments —
+  as approve/skip cards, analyzed by a local headless Claude session.
 - Database-backed storage, with SQLite for local development and Firestore for Google Cloud.
 - Automatic DD estimates when the source did not provide a deadline.
 - Reminder fields so missed tasks can be queried and notified.

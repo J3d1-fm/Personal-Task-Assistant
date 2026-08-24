@@ -161,3 +161,55 @@ auto-delete or rewrite work that may already be in progress.
 The adapter fails closed when `TELEGRAM_ALLOWED_CHAT_IDS` is empty. To accept
 updates from every chat intentionally, set `TELEGRAM_ALLOW_ALL_CHATS=true`; this
 is not recommended for public bots.
+
+## Telegram Business ingestion («Автоматизация чатов»)
+
+`telegram_business.py` (opt-in: `TELEGRAM_BUSINESS_TASKS=1`) turns the owner's
+own Telegram chats into a reviewed task-candidate stream. Telegram Premium
+lets a user connect one bot to their personal account; the connected bot then
+receives `business_*` updates for new messages in the user's private 1:1
+chats — both directions — through the same getUpdates stream this polling
+adapter already consumes. Unlike a full user-session (MTProto) integration,
+the bot holds only the permissions granted on the connect screen: with every
+toggle off it cannot write, edit, or delete anything in those chats, so the
+whole path is structurally read-only. No business send/edit/delete method
+exists in the module, and the ledger plus a local suggested-list make every
+candidate a one-shot suggestion.
+
+Setup:
+
+1. In `@BotFather`: `/mybots` → your bot → Bot Settings → **Business Mode →
+   Turn on** (`getMe` should then report `can_connect_to_business: true`).
+2. In Telegram (Premium): Settings → Telegram Business → Chatbots (newer
+   clients: «Автоматизация чатов») → enter the bot's `@username`.
+3. On the connect screen: pick which chats the bot sees (exclude anything
+   sensitive) and **disable all permissions** — collection needs none of
+   them. The bot confirms the connection in the notify chat and warns if
+   extra permissions are still granted.
+4. Set `TELEGRAM_BUSINESS_TASKS=1` next to the usual adapter variables and
+   restart the supervised adapter job.
+
+How it works: each business message lands in a small per-chat rolling buffer
+in local JSON state (`TELEGRAM_BUSINESS_STATE`, default
+`.adapter_state/telegram_business_state.json`); voice notes are transcribed
+with the same local STT as the command path (`BUSINESS_VOICE_MAX_SECONDS`,
+default 300). Once a chat stays quiet for `BUSINESS_ANALYZE_LULL` seconds
+(default 180; a busy chat is force-analyzed after
+`BUSINESS_ANALYZE_MAX_WAIT`), the unanalyzed window plus a little context is
+sent to a **local headless Claude Code session** (the work runner's
+no-API-billing pattern; `WORK_CLAUDE_BIN`, optional `BUSINESS_ANALYZE_MODEL`)
+that extracts at most `BUSINESS_MAX_CANDIDATES` candidates of exactly two
+kinds: a direct ask addressed to the owner, or the owner's own "ок, сделаю"
+commitment. Anything below `BUSINESS_MIN_CONFIDENCE` is dropped; when in
+doubt the model is told to return nothing.
+
+Each surviving candidate is receipted as `needs_review` in the ingestion
+ledger and becomes a card with inline buttons in `TELEGRAM_NOTIFY_CHAT_ID`:
+✅ creates the task through `POST /api/agent/ingest/context` (stable
+`external_id`, `assignee=me`, the quoted source message in the description)
+and records a `created`/`duplicate` decision as the human's; 🙈 records a
+durable `ignored` decision so the item is never suggested again, even after
+the local state is wiped. Chats listed in `BUSINESS_IGNORE_CHAT_IDS` are
+never buffered. Group chats are not part of Telegram's business updates —
+this covers private 1:1 chats only, and only messages sent after the
+connection was made.

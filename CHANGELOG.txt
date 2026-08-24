@@ -1,5 +1,63 @@
 Personal Task Assistant Changelog
 
+Version 0.17.0 - 2026-08-24
+
+Telegram Business ingestion — the owner's own chats become a reviewed
+task-candidate stream through the official Bot API. Telegram Premium's chat
+automation («Автоматизация чатов») connects the bot to the owner's personal
+account, and the bot then sees the selected private 1:1 chats with zero
+write permissions — a structurally safer alternative to user-session
+(MTProto) automations, which hold the full destructive power of the account.
+
+- Added `adapters/telegram_business.py`, an opt-in module
+  (`TELEGRAM_BUSINESS_TASKS=1`) the polling adapter routes `business_*`
+  updates into; getUpdates subscribes to them only when the feature is on.
+  New messages in the owner's private chats — both directions — land in
+  per-chat rolling buffers in local JSON state
+  (`.adapter_state/telegram_business_state.json`). Voice notes are
+  transcribed with the same local no-cloud STT as the command path
+  (`BUSINESS_VOICE_MAX_SECONDS`, 300s default); other media degrade to
+  typed markers. The module never calls a business send/edit/delete
+  method — with all connect-screen permissions off the path is
+  structurally read-only — and the connection handler confirms the hookup
+  in the notify chat, warning when extra permissions are still granted.
+- Once a chat goes quiet (`BUSINESS_ANALYZE_LULL`, 180s default; busy
+  chats are force-analyzed after `BUSINESS_ANALYZE_MAX_WAIT`), the
+  unanalyzed window plus recent context is classified by a local headless
+  Claude Code session — the work runner's no-API-billing pattern
+  (`WORK_CLAUDE_BIN`, optional `BUSINESS_ANALYZE_MODEL`) with an empty
+  strict MCP config, so the session has no tools at all. The prompt allows
+  exactly two candidate kinds — a direct ask addressed to the owner, or
+  the owner's own «ок, сделаю» commitment — caps output at
+  `BUSINESS_MAX_CANDIDATES`, drops anything below
+  `BUSINESS_MIN_CONFIDENCE`, and is told an empty list beats noise on the
+  board. Failed analyses retry and give up after three attempts; the
+  polling loop survives every business error (caught and sanitized).
+- Candidates are cards, not tasks: each is receipted as `needs_review` in
+  the ingestion ledger and sent to `TELEGRAM_NOTIFY_CHAT_ID` with inline
+  ✅/🙈 buttons. ✅ creates the task through the normal ingest path
+  (content-stable `external_id`, `assignee=me`, the quoted source message
+  and chat name in the description, a due date only when the chat named
+  one) and records `created`/`duplicate` with `decided_by=human`; 🙈
+  records a durable `ignored` decision — so every candidate is one-shot,
+  even after the local state is wiped. The `cand:*` callback namespace
+  stays separate from the `task:*` review buttons.
+- Safety rails: chats can be excluded locally (`BUSINESS_IGNORE_CHAT_IDS`)
+  on top of Telegram's own per-chat selection; group chats never arrive
+  (business updates cover private 1:1 chats only, from the moment of
+  connection); edited messages never re-open an already analyzed window;
+  deletions drop the buffered copies; buffers are capped per chat; stale
+  candidates and long-idle chats are pruned.
+- Docs and examples: `adapters/README.md` gained the setup walkthrough
+  (BotFather Business Mode, the connect screen, permissions off) and the
+  behavior contract; `telegram.env.example` lists the new variables; the
+  README features list mentions the capability. Tests: 24 new offline
+  tests cover buffering/direction/watermark/trim/delete, media markers,
+  candidate parsing, lull scheduling, ledger suppression,
+  retry-then-give-up, both button flows, stale cards, prompt structure,
+  state round-trip, and adapter routing (198 total).
+- Bumped the app version from 0.16.0 to 0.17.0.
+
 Version 0.16.0 - 2026-08-15
 
 Mandatory work reports — the agent must now explain WHAT it did and HOW,
